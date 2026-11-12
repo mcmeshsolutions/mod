@@ -17,11 +17,13 @@ public final class MeshConfig {
     public static final ModConfigSpec.BooleanValue SHIP_LOGS;
     public static final ModConfigSpec.ConfigValue<String> AUTH_MODE;
     public static final ModConfigSpec.ConfigValue<String> PLAYER_NAME;
+    public static final ModConfigSpec.ConfigValue<String> PACK_ID;
     public static final ModConfigSpec.ConfigValue<String> MODPACK_URL;
     public static final ModConfigSpec.ConfigValue<String> MODPACK_INSTANCE;
 
     static {
         ModConfigSpec.Builder b = new ModConfigSpec.Builder();
+        PACK_ID = b.comment("Modpack this install belongs to; a gateway only shows and accepts worlds of the same pack").define("packId", "default");
         API_URL = b.define("apiUrl", "https://play.23012006.xyz");
         RELAY_HOST = b.define("relayHost", "play.23012006.xyz");
         RELAY_PORT = b.defineInRange("relayPort", 25571, 1, 65535);

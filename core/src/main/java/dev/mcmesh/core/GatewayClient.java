@@ -18,6 +18,8 @@ public final class GatewayClient {
     private final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(5)).build();
     private final String base;
     private final String token;
+    /** Modpack id sent with every request; worlds of other packs are invisible and refuse joins. */
+    public static volatile String pack = "default";
 
     public GatewayClient(String baseUrl, String token) {
         this.base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
@@ -26,7 +28,7 @@ public final class GatewayClient {
 
     private byte[] exec(String path, String method, HttpRequest.BodyPublisher body, String contentType) throws IOException, GatewayException {
         HttpRequest req = HttpRequest.newBuilder(URI.create(base + path)).method(method, body).header("authorization", "Bearer " + token)
-                .header("content-type", contentType).timeout(Duration.ofSeconds(20)).build();
+                .header("x-mesh-pack", pack).header("content-type", contentType).timeout(Duration.ofSeconds(20)).build();
         HttpResponse<byte[]> r;
         try {
             r = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
