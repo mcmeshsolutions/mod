@@ -1,0 +1,21 @@
+plugins { id 'java-library' }
+
+repositories { mavenCentral() }
+
+java { sourceCompatibility = JavaVersion.VERSION_21; targetCompatibility = JavaVersion.VERSION_21 }
+tasks.withType(JavaCompile) { options.release = 21 }
+
+dependencies {
+    // Minecraft ships gson, so the mod only needs it at compile time
+    compileOnly 'com.google.code.gson:gson:2.10.1'
+    testImplementation 'com.google.code.gson:gson:2.10.1'
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+    systemProperty 'gatewayd.bin', System.getenv('MCMESH_GATEWAYD') ?: "${rootDir}/../target/debug/gatewayd"
+    testLogging { events 'failed', 'skipped'; exceptionFormat 'full' }
+}

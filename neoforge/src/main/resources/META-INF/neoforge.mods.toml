@@ -1,0 +1,26 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "MIT"
+
+[[mods]]
+modId = "mcmesh"
+version = "0.1.0"
+displayName = "MC Mesh"
+description = "Joins a mesh gateway and hosts the world when this machine is the strongest peer."
+
+[[dependencies.mcmesh]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.mcmesh]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1]"
+ordering = "NONE"
+side = "BOTH"
+
+[[mixins]]
+config = "mcmesh.mixins.json"
