@@ -56,7 +56,7 @@ public final class QuickPlay {
             scr.line("Create one under Shared worlds first.");
             return;
         }
-        String differs = dev.mcmesh.core.PackCheck.warning(MeshConfig.PACK_VERSION.get(), w.packVersion());
+        String differs = dev.mcmesh.core.PackCheck.warning(MeshConfig.packVersion(), w.packVersion());
         if (differs != null) {
             scr.heading("Modpack version differs");
             scr.line(differs);

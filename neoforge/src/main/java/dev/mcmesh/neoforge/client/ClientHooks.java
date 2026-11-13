@@ -40,6 +40,7 @@ public final class ClientHooks {
     }
 
     static {
+        PackUpdate.start();
         dev.mcmesh.neoforge.WhitelistNet.onState = s -> {
             var mc = Minecraft.getInstance();
             if (mc.screen instanceof WhitelistScreen w) {
