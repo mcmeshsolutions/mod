@@ -195,7 +195,8 @@ public final class MeshService {
         try {
             try {
                 var files = gw.listRevision(h.lease().baseRev());
-                boolean gatewayHasData = !(files.chunks().isEmpty() && files.aux().isEmpty());
+                // rebuilding from the gateway only makes sense when it holds the terrain; without chunks the local folder is the only copy
+                boolean gatewayHasData = !files.chunks().isEmpty();
                 if (dev.mcmesh.core.SafeBoot.prepare(s.crashMarker(), worldRoot, gatewayHasData)) {
                     LOG.warn("the last hosting run of {} did not stop cleanly: rebuilding the local world from the gateway, the old copy is kept next to it", world);
                 }

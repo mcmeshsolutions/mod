@@ -13,7 +13,7 @@ public final class SafeBoot {
     private SafeBoot() { }
 
     /**
-     * @param gatewayHasData false when the revision to host is empty: then the local folder is the only copy and is kept
+     * @param gatewayHasData false when the revision to host holds no chunks (an empty world, or one whose terrain was never uploaded): the local folder is then the only copy and is kept
      * @return true when the local world was marked for a rebuild
      */
     public static boolean prepare(Path crashMarker, Path worldRoot, boolean gatewayHasData) throws IOException {

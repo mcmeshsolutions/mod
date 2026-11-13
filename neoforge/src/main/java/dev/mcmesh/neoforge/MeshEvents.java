@@ -69,13 +69,20 @@ public final class MeshEvents {
     }
 
     // MinecraftServerMixin hides the singleplayer profile, so vanilla no longer stops the server when the host leaves
+    /** halt() removes every player, which fires this very event again for the host; without the guard that recurses until the stack overflows and the final save never happens. */
+    private static final java.util.concurrent.atomic.AtomicBoolean HALTING = new java.util.concurrent.atomic.AtomicBoolean();
+
     @SubscribeEvent
     public static void hostLeft(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent e) {
         if (MeshBoot.held() != null && e.getEntity() instanceof net.minecraft.server.level.ServerPlayer p
-                && p.connection.getConnection().isMemoryConnection()) {
-            p.server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal(
-                    "The host left. Hosting moves to another eligible player automatically."), false);
-            p.server.halt(false);
+                && p.connection.getConnection().isMemoryConnection() && HALTING.compareAndSet(false, true)) {
+            try {
+                p.server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal(
+                        "The host left. Hosting moves to another eligible player automatically."), false);
+                p.server.halt(false);
+            } finally {
+                HALTING.set(false);
+            }
         }
     }
 
