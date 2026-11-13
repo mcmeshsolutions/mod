@@ -47,6 +47,8 @@ public final class MeshService {
     static {
         dev.mcmesh.core.GatewayClient.syncProgress = SyncProgress::report;
         GatewayClient.hwScore = () -> HostBench.get().get("cpu").getAsDouble();
+        GatewayClient.playerCount = LoadShed::reportedPlayers;
+        GatewayClient.loadLevel = LoadShed::reportedLevel;
     }
 
     private final AuxSync aux = new AuxSync();

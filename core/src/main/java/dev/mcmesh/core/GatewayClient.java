@@ -267,6 +267,12 @@ public final class GatewayClient {
 
     public static volatile java.util.function.Supplier<long[]> syncProgress;
 
+    /** Real players online right now, or -1 when unknown; reported with each heartbeat. */
+    public static volatile java.util.function.IntSupplier playerCount = () -> -1;
+
+    /** Load-shedding level 0 to 3, or -1 when unknown; reported with each heartbeat. */
+    public static volatile java.util.function.IntSupplier loadLevel = () -> -1;
+
     public Heartbeat heartbeat(String lease, long epoch) throws IOException, GatewayException {
         JsonObject body = epoch(epoch);
         var p = syncProgress;
@@ -274,6 +280,14 @@ public final class GatewayClient {
         if (sp != null && sp[1] > 0) {
             body.addProperty("sync_done", sp[0]);
             body.addProperty("sync_total", sp[1]);
+        }
+        int players = playerCount.getAsInt();
+        if (players >= 0) {
+            body.addProperty("players", players);
+        }
+        int load = loadLevel.getAsInt();
+        if (load >= 0) {
+            body.addProperty("load", load);
         }
         JsonObject r = post("/v1/leases/" + lease + "/heartbeat", body);
         List<String> targets = new ArrayList<>();

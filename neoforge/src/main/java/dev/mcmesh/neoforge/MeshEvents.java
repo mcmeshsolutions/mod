@@ -102,6 +102,7 @@ public final class MeshEvents {
         }
         MeshService hosting = MeshService.current();
         if (hosting != null) {
+            LoadShed.countPlayers(e.getServer());
             LoadShed.sample(e.getServer());
             if (e.getServer().getTickCount() % 600 == 0) {
                 HandoverWatch.check(e.getServer(), hosting);
