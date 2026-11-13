@@ -19,3 +19,10 @@ test {
     systemProperty 'gatewayd.bin', System.getenv('MCMESH_GATEWAYD') ?: "${rootDir}/../target/debug/gatewayd"
     testLogging { events 'failed', 'skipped'; exceptionFormat 'full' }
 }
+
+// gradle :core:packBuilder -PpackArgs="keygen author.key"   or   -PpackArgs="build <packDir> <packId> <version> <keyfile> <outDir> [<previous manifest.json>]"
+tasks.register('packBuilder', JavaExec) {
+    classpath = sourceSets.main.output + configurations.compileClasspath
+    mainClass = 'dev.mcmesh.core.PackBuilder'
+    args = (project.findProperty('packArgs') ?: '').toString().split(' ').findAll { it }
+}

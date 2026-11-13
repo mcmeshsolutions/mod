@@ -245,7 +245,7 @@ public final class PackUpdater {
         return u;
     }
 
-    private static PublicKey key(String b64) throws Rejected {
+    static PublicKey key(String b64) throws Rejected {
         try {
             byte[] raw = Base64.getUrlDecoder().decode(b64.strip());
             if (raw.length != 32) {
