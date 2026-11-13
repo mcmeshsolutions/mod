@@ -157,7 +157,23 @@ public final class GatewayClient {
         return post("/v1/panel/code", new JsonObject()).get("code").getAsString();
     }
 
+    private record Route(String world, GatewayClient via) { }
+
+    private static volatile Route route;
+
+    /**
+     * World on a non-default gateway the player is joining. The handshake hook only knows the default gateway,
+     * so ticket() for that world is sent to the gateway that owns it, with that gateway's own token. Null clears it.
+     */
+    public static void ticketRoute(String world, GatewayClient via) {
+        route = world == null || via == null ? null : new Route(world, via);
+    }
+
     public String ticket(String world) throws IOException, GatewayException {
+        Route r = route;
+        if (r != null && r.via != this && r.world.equals(world)) {
+            return r.via.ticket(world);
+        }
         return post("/v1/worlds/" + world + "/ticket", new JsonObject()).get("ticket").getAsString();
     }
 

@@ -14,10 +14,15 @@ public final class QuickPlay {
     private QuickPlay() { }
 
     public static void start(Screen back) {
+        Gateways.confirmHosting(back, ok -> start(back, ok));
+    }
+
+    private static void start(Screen back, boolean mayHost) {
         if (busy) {
             return;
         }
         busy = true;
+        GatewayClient.ticketRoute(null, null);
         Minecraft mc = Minecraft.getInstance();
         var scr = new HandoverScreen("Connecting", "Looking for the world.", 0, null);
         scr.onCancel(() -> {
@@ -27,7 +32,7 @@ public final class QuickPlay {
         mc.setScreen(scr);
         Thread t = new Thread(() -> {
             try {
-                run(mc, scr, back);
+                run(mc, scr, back, mayHost);
             } catch (Exception e) {
                 LogUtils.getLogger().warn("quick play failed: {}", e.toString());
                 scr.heading("Could not connect");
@@ -40,7 +45,7 @@ public final class QuickPlay {
         t.start();
     }
 
-    private static void run(Minecraft mc, HandoverScreen scr, Screen back) throws Exception {
+    private static void run(Minecraft mc, HandoverScreen scr, Screen back, boolean mayHost) throws Exception {
         var id = MeshAuth.cached();
         var gw = new GatewayClient(MeshConfig.API_URL.get(), id.token());
         var l = gw.listWorlds();
@@ -52,7 +57,7 @@ public final class QuickPlay {
             return;
         }
         boolean other = w.host() != null && !w.host().equalsIgnoreCase(id.name());
-        if (other && w.takeoverInS() >= 0) {
+        if (other && w.takeoverInS() >= 0 && mayHost) {
             Standby.waitAndTake(w, l.relay(), back);
             return;
         }
@@ -63,7 +68,9 @@ public final class QuickPlay {
                 Thread.sleep(2_000);
                 w = l.worlds().isEmpty() ? w : refresh(gw, w);
             }
-            String err = HostFlow.join(w, l.relay(), back);
+            // without approval to host: plain guest, no standby bidding for the lease
+            String err = HostFlow.join(mayHost ? w : new GatewayClient.WorldInfo(w.id(), w.name(), w.mcVersion(), "CLIENT_ONLY", w.state(),
+                    w.host(), -1, w.hostReady(), w.syncDone(), w.syncTotal()), l.relay(), back);
             if (err != null) {
                 scr.heading("Could not connect");
                 scr.line(err);
@@ -73,6 +80,11 @@ public final class QuickPlay {
         if (w.role().equals("CLIENT_ONLY")) {
             scr.heading("Nobody is hosting");
             scr.line("You are not allowed to host " + w.name() + ".");
+            return;
+        }
+        if (!mayHost) {
+            scr.heading("Nobody is hosting");
+            scr.line("Hosting was not approved for this gateway.");
             return;
         }
         String err = HostFlow.host(w, back, s -> scr.line(s + "..."));

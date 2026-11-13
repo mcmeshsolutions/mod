@@ -33,6 +33,10 @@ final class WorldSync {
 
     /** Returns true when the revision is empty, meaning the local folder (if any) is the world to seed from. */
     static boolean sync(GatewayClient gw, Path root, String rev) throws Exception {
+        Path kept = dev.mcmesh.core.RejectedCopy.setAside(root);
+        if (kept != null) {
+            LOG.warn("the gateway refused the last save of this world; that copy is kept in {}", kept);
+        }
         Path marker = root.resolve(MARKER);
         String have = Files.exists(marker) ? Files.readString(marker).trim() : null;
         if (rev.equals(have)) {

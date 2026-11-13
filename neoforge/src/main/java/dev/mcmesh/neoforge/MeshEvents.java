@@ -34,6 +34,9 @@ public final class MeshEvents {
         MeshOps.load(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize(), founder);
         MeshWhitelist.load(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize());
         s.onFence(() -> server.execute(() -> server.halt(false)));
+        s.onRefused(() -> server.execute(() -> server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal(
+                "The gateway refused the last save of this world (sanity check). Nothing more is uploaded this session. "
+                        + "The world on the host's machine is kept as a separate copy; ask the gateway operator to look at it."), false)));
         s.onHandoff(name -> server.execute(() -> {
             server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal(
                     name + " wants to play together. Hosting is moving to their machine, you will be reconnected automatically."), false);
