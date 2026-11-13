@@ -65,6 +65,15 @@ public final class ClientHooks {
 
     @SubscribeEvent
     public static void hud(net.neoforged.neoforge.client.event.RenderGuiEvent.Post e) {
+        try {
+            var health = HostHealthHud.line();
+            if (health != null) {
+                var f = Minecraft.getInstance().font;
+                e.getGuiGraphics().drawString(f, health.text(), e.getGuiGraphics().guiWidth() - f.width(health.text()) - 6, 18, health.color(), true);
+            }
+        } catch (RuntimeException ex) {
+            // a status line must never take the frame down with it
+        }
         long left = Standby.remainingS();
         if (left < 0) {
             return;

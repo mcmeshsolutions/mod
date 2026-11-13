@@ -72,6 +72,22 @@ public final class GatewayClient {
         exec("/v1/logs", "POST", HttpRequest.BodyPublishers.ofByteArray(text), "text/plain");
     }
 
+    /** The load level and real player count the world's host last reported, or UNKNOWN. */
+    public HostHealth hostHealth(String worldId) throws IOException, GatewayException {
+        byte[] r = exec("/v1/worlds", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
+        for (JsonElement e : JsonParser.parseString(new String(r)).getAsJsonObject().getAsJsonArray("worlds")) {
+            JsonObject o = e.getAsJsonObject();
+            if (worldId.equals(o.get("id").getAsString())) {
+                return new HostHealth(intOr(o, "host_load"), intOr(o, "host_players"));
+            }
+        }
+        return HostHealth.UNKNOWN;
+    }
+
+    private static int intOr(JsonObject o, String key) {
+        return o.has(key) && !o.get(key).isJsonNull() ? o.get(key).getAsInt() : -1;
+    }
+
     /** Uploads a probe body the gateway discards, so the caller can time its own uplink. */
     public void bandwidthProbe(byte[] body) throws IOException, GatewayException {
         exec("/v1/bandwidth", "POST", HttpRequest.BodyPublishers.ofByteArray(body), "application/octet-stream");

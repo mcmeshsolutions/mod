@@ -19,6 +19,11 @@ final class HandoverWatch {
 
     private HandoverWatch() { }
 
+    /** Last measured uplink in Mbit/s, or -1. */
+    static double uploadMbps() {
+        return uploadMbps;
+    }
+
     static boolean enabled() {
         return !"off".equalsIgnoreCase(System.getProperty("mcmesh.batteryhandover", "on"));
     }

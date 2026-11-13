@@ -15,6 +15,7 @@ public final class MeshConfig {
     public static final ModConfigSpec.ConfigValue<java.util.List<? extends String>> CHANNELS;
     public static final ModConfigSpec.ConfigValue<String> PUBLIC_HOST;
     public static final ModConfigSpec.BooleanValue SHIP_LOGS;
+    public static final ModConfigSpec.BooleanValue SHOW_HOST_HEALTH;
     public static final ModConfigSpec.ConfigValue<String> AUTH_MODE;
     public static final ModConfigSpec.ConfigValue<String> PLAYER_NAME;
     public static final ModConfigSpec.ConfigValue<String> PACK_ID;
@@ -45,6 +46,7 @@ public final class MeshConfig {
         AUTH_MODE = b.comment("auto (Mojang then key), mojang, or key").define("authMode", "auto");
         PLAYER_NAME = b.comment("name to claim on a dedicated server, where there is no launcher session").define("playerName", "");
         SHIP_LOGS = b.comment("send latest.log to the gateway operator once logged in, for debugging, off by default because logs can contain private details").define("shipLogs", false);
+        SHOW_HOST_HEALTH = b.comment("show a small line in the corner of the screen about how well the host machine is doing").define("showHostHealth", true);
         PUBLIC_HOST = b.comment("address players type to reach the gateway; tickets are attached only when connecting to it").define("publicHost", "play.23012006.xyz");
         DISCORD_APP = b.comment("Discord application id for rich presence; empty disables it").define("discordAppId", "");
         MODPACK_URL = b.comment("direct link to a Prism instance export (.zip); empty hides the modpack updater").define("modpackUrl", "");
