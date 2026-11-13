@@ -95,6 +95,18 @@ public final class MeshEvents {
         }
     }
 
+    @SubscribeEvent
+    public static void loadShedding(ServerTickEvent.Post e) {
+        if (e.getServer().getTickCount() % 20 != 0) {
+            return;
+        }
+        if (MeshService.current() != null) {
+            LoadShed.sample(e.getServer());
+        } else {
+            LoadShed.restore(e.getServer());
+        }
+    }
+
     private static int lowStreak;
 
     @SubscribeEvent
@@ -125,6 +137,7 @@ public final class MeshEvents {
 
     @SubscribeEvent
     public static void stopping(ServerStoppedEvent e) {
+        LoadShed.restore(e.getServer());
         MeshService s = MeshBoot.held();
         MeshBoot.clear();
         MeshOps.unload();
