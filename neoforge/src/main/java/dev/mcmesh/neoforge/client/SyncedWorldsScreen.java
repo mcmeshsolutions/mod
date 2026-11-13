@@ -128,7 +128,21 @@ public final class SyncedWorldsScreen extends Screen {
                 .bounds(x + 232, y1, 76, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Redeem"), b -> {
             Gateway g = target();
-            minecraft.setScreen(new PromptScreen(this, "Invite code for " + g.host(), "Code", code -> redeem(g, code)));
+            var pasted = dev.mcmesh.core.InviteLink.parse(minecraft.keyboardHandler.getClipboard());
+            if (pasted != null) {
+                Gateway forInvite = dev.mcmesh.core.InviteLink.gatewayFor(pasted, MeshConfig.gateways(), g);
+                if (forInvite == null) {
+                    message = "That invite is for " + pasted.host() + ", which is not in your gateways list. Add it to 'gateways' in the mcmesh config first.";
+                    return;
+                }
+                message = "Using the invite from your clipboard...";
+                redeem(forInvite, pasted.code());
+                return;
+            }
+            minecraft.setScreen(new PromptScreen(this, "Invite code for " + g.host(), "Code or link", text -> {
+                var parsed = dev.mcmesh.core.InviteLink.parse(text);
+                redeem(g, parsed == null ? text.strip() : parsed.code());
+            }));
         })
                 .bounds(x, y2, 56, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Refresh"), b -> { message = "Refreshing..."; refresh(); })
@@ -272,8 +286,9 @@ public final class SyncedWorldsScreen extends Screen {
         Gateway g = sel.g.gw();
         run("mesh-invite", "Creating invite...", () -> {
             String code = Gateways.client(g).createInvite(w.id(), "HOST_ELIGIBLE");
-            minecraft.execute(() -> minecraft.keyboardHandler.setClipboard(code));
-            return "Invite code " + code + " copied. It works once.";
+            String link = dev.mcmesh.core.InviteLink.link(g.apiUrl(), code);
+            minecraft.execute(() -> minecraft.keyboardHandler.setClipboard(link));
+            return "Invite link copied, send it to your friend: " + link + " It works once and expires in 7 days.";
         });
     }
 
