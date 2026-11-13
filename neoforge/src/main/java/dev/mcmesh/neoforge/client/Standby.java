@@ -39,6 +39,59 @@ public final class Standby {
 
     private Standby() { }
 
+    /** True while this machine is waiting to take the world over. */
+    public static boolean active() {
+        return running != null;
+    }
+
+    /**
+     * The connection to a mesh world dropped without a handover being announced (the host quit, crashed or lost its link).
+     * Waits for the world to continue elsewhere and reconnects as a guest. A machine that is allowed to host is taken care of
+     * by the standby loop, which bids for the world itself. If nothing happens within two minutes the original
+     * disconnect screen, with its real reason, is shown after all.
+     */
+    public static void reconnect(String worldId, net.minecraft.client.gui.screens.Screen original, HandoverScreen wait) {
+        Minecraft mc = Minecraft.getInstance();
+        markSwitching(150_000);
+        Thread t = new Thread(() -> {
+            long end = System.currentTimeMillis() + 120_000;
+            try {
+                while (System.currentTimeMillis() < end) {
+                    Thread.sleep(3_000);
+                    var id = MeshAuth.cached();
+                    var l = new GatewayClient(MeshConfig.API_URL.get(), id.token()).listWorlds();
+                    for (var w : l.worlds()) {
+                        if (!w.id().equals(worldId)) {
+                            continue;
+                        }
+                        if (w.host() != null && w.host().equalsIgnoreCase(id.name())) {
+                            return;
+                        }
+                        if ("LOCKED".equals(w.state()) && w.host() != null && w.hostReady()) {
+                            wait.line("Reconnecting to " + w.host() + ".");
+                            switchUntil = 0;
+                            mc.execute(() -> HostFlow.join(w, l.relay(), new TitleScreen()));
+                            return;
+                        }
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            } catch (Exception e) {
+                LOG.warn("reconnect wait failed: {}", e.toString());
+            }
+            switchUntil = 0;
+            mc.execute(() -> {
+                if (mc.screen instanceof HandoverScreen && mc.level == null) {
+                    mc.setScreen(original);
+                }
+            });
+        }, "mesh-reconnect");
+        t.setDaemon(true);
+        t.start();
+    }
+
     public static void stop() {
         Thread t = running;
         running = null;

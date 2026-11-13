@@ -53,13 +53,25 @@ public final class ClientHooks {
 
     @SubscribeEvent
     public static void opening(net.neoforged.neoforge.client.event.ScreenEvent.Opening e) {
-        if (!Standby.switching() || !(e.getNewScreen() instanceof net.minecraft.client.gui.screens.DisconnectedScreen)) {
+        if (!(e.getNewScreen() instanceof net.minecraft.client.gui.screens.DisconnectedScreen original)) {
             return;
         }
         if (e.getCurrentScreen() instanceof HandoverScreen) {
             e.setCanceled(true);
-        } else {
-            e.setNewScreen(new HandoverScreen("Host switching", "Handing the world over. You will be reconnected automatically.", 0, null));
+            return;
+        }
+        boolean announced = Standby.switching();
+        if (!dev.mcmesh.core.SessionLoss.holdDisconnectScreen(HostFlow.guestAliveAt, System.currentTimeMillis(), announced, Standby.active())) {
+            return;
+        }
+        // players never see the plain Server Disconnected screen while a world changes hands
+        var wait = new HandoverScreen("Host switching", announced
+                ? "Handing the world over. You will be reconnected automatically."
+                : "The host went away. Waiting for the world to continue, you will be reconnected automatically.", 0, null);
+        e.setNewScreen(wait);
+        String world = HostFlow.guestWorld;
+        if (!announced && world != null) {
+            Standby.reconnect(world, original, wait);
         }
     }
 
@@ -115,6 +127,9 @@ public final class ClientHooks {
     @SubscribeEvent
     public static void hud(net.neoforged.neoforge.client.event.RenderGuiEvent.Post e) {
         try {
+            if (HostHealthHud.joinedWorld(Minecraft.getInstance()) != null) {
+                HostFlow.guestAliveAt = System.currentTimeMillis();
+            }
             var health = HostHealthHud.line();
             if (health != null) {
                 var f = Minecraft.getInstance().font;

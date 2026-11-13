@@ -18,6 +18,10 @@ public final class HostFlow {
 
     /** Name of the host a guest session is connected to, for the pause menu. */
     static volatile String guestOf;
+    /** Last time this client was in a mesh world as a guest, and where: used to recognise a lost session. */
+    static volatile long guestAliveAt;
+    static volatile String guestWorld;
+    static volatile String guestRelay;
 
     public static String saveName(String worldId) {
         return "mesh-" + worldId;
@@ -121,6 +125,8 @@ public final class HostFlow {
         MeshTap.joinHost = addr.getHost();
         MeshTap.joinWorld = w.id();
         guestOf = w.host();
+        guestWorld = w.id();
+        guestRelay = relay;
         if (!w.role().equals("CLIENT_ONLY")) {
             Standby.start(w, relay);
         }
