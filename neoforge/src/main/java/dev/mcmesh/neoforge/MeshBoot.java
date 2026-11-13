@@ -34,6 +34,9 @@ public final class MeshBoot {
             Path root = universe.resolve(levelName()).toAbsolutePath().normalize();
             MeshTap.setRoot(root);
             MeshService s = MeshService.join(root, 1, Runtime.getRuntime().availableProcessors());
+            if (s == null && MeshConfig.ANCHOR_STANDBY.get()) {
+                s = standby(root);
+            }
             if (s == null) {
                 throw new IllegalStateException("mesh: another machine holds the host lease for this world, not starting a second writer");
             }
@@ -42,6 +45,36 @@ public final class MeshBoot {
             throw e;
         } catch (Exception e) {
             throw new IllegalStateException("mesh: could not join the world, refusing to start", e);
+        }
+    }
+
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger("mcmesh");
+    static final long STANDBY_POLL_MS = 10_000;
+
+    /**
+     * Anchor node: nobody else may be hosting, and the world must not be loaded until this machine holds the lease.
+     * Asking again every few seconds keeps this machine a fresh candidate for the gateway's election, so when the
+     * current host leaves with guests still playing, the anchor can be granted the world. Returns null only if interrupted.
+     */
+    private static MeshService standby(Path root) throws Exception {
+        LOG.info("anchor standby: another machine hosts {}, waiting for the world to become free", MeshConfig.WORLD.get());
+        long since = System.currentTimeMillis();
+        while (true) {
+            try {
+                Thread.sleep(STANDBY_POLL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+            try {
+                MeshService s = MeshService.join(root, 1, Runtime.getRuntime().availableProcessors());
+                if (s != null) {
+                    LOG.info("anchor standby over after {} s, taking the host lease", (System.currentTimeMillis() - since) / 1000);
+                    return s;
+                }
+            } catch (java.io.IOException e) {
+                LOG.warn("anchor standby: gateway not reachable, retrying: {}", e.toString());
+            }
         }
     }
 
