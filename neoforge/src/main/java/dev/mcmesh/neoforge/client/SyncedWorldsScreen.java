@@ -47,7 +47,8 @@ public final class SyncedWorldsScreen extends Screen {
             if (e instanceof GatewayException ge && ge.status == 401) {
                 Gateways.forget(g);
             }
-            return new Group(g, null, "", e.getMessage() == null ? e.toString() : e.getMessage());
+            String why = e instanceof GatewayException ge ? dev.mcmesh.core.PackCheck.explain(ge, MeshConfig.PACK_ID.get()) : null;
+            return new Group(g, null, "", why != null ? why : e.getMessage() == null ? e.toString() : e.getMessage());
         }
     }
 
@@ -106,7 +107,7 @@ public final class SyncedWorldsScreen extends Screen {
     }
 
     private static GatewayClient.WorldInfo guestOnly(GatewayClient.WorldInfo w) {
-        return new GatewayClient.WorldInfo(w.id(), w.name(), w.mcVersion(), "CLIENT_ONLY", w.state(), w.host(), -1, w.hostReady(), w.syncDone(), w.syncTotal());
+        return new GatewayClient.WorldInfo(w.id(), w.name(), w.mcVersion(), "CLIENT_ONLY", w.state(), w.host(), -1, w.hostReady(), w.syncDone(), w.syncTotal(), w.packVersion());
     }
 
     @Override
@@ -177,7 +178,8 @@ public final class SyncedWorldsScreen extends Screen {
                 }
             } catch (Exception e) {
                 LOG.error("{} failed", name, e);
-                message = "Failed: " + (e.getMessage() == null ? e : e.getMessage());
+                String why = e instanceof GatewayException ge ? dev.mcmesh.core.PackCheck.explain(ge, MeshConfig.PACK_ID.get()) : null;
+                message = why != null ? why : "Failed: " + (e.getMessage() == null ? e : e.getMessage());
             }
             busy = false;
         });
@@ -187,12 +189,21 @@ public final class SyncedWorldsScreen extends Screen {
         String run() throws Exception;
     }
 
+    private String warnedWorld;
+
     private void primary() {
         WorldEntry sel = list.getSelected();
         if (sel == null || sel.w == null) {
             return;
         }
         GatewayClient.WorldInfo w = sel.w;
+        String differs = dev.mcmesh.core.PackCheck.warning(MeshConfig.PACK_VERSION.get(), w.packVersion());
+        if (differs != null && !w.id().equals(warnedWorld)) {
+            warnedWorld = w.id();
+            message = differs + " Press the button again to continue anyway.";
+            return;
+        }
+        warnedWorld = null;
         Gateway g = sel.g.gw();
         String relay = sel.g.listing().relay();
         boolean hostedByOther = w.host() != null && !w.host().equalsIgnoreCase(sel.g.me());
@@ -225,7 +236,7 @@ public final class SyncedWorldsScreen extends Screen {
         GatewayClient.ticketRoute(null, null);
         if (hostedByOther && w.takeoverInS() >= 0) {
             long left = Math.max(0, w.takeoverInS() - (System.currentTimeMillis() - fetchedAt) / 1000);
-            Standby.waitAndTake(new GatewayClient.WorldInfo(w.id(), w.name(), w.mcVersion(), w.role(), w.state(), w.host(), left, w.hostReady(), w.syncDone(), w.syncTotal()), relay, this);
+            Standby.waitAndTake(new GatewayClient.WorldInfo(w.id(), w.name(), w.mcVersion(), w.role(), w.state(), w.host(), left, w.hostReady(), w.syncDone(), w.syncTotal(), w.packVersion()), relay, this);
         } else if (hostedByOther) {
             run("mesh-join", "Joining " + w.name() + "...", () -> HostFlow.join(w, relay, this));
         } else if (w.role().equals("CLIENT_ONLY")) {

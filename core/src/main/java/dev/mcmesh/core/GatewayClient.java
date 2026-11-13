@@ -20,6 +20,7 @@ public final class GatewayClient {
     private final String token;
     /** Modpack id sent with every request; worlds of other packs are invisible and refuse joins. */
     public static volatile String pack = "default";
+    public static volatile String packVersion = "0";
 
     public GatewayClient(String baseUrl, String token) {
         this.base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
@@ -28,7 +29,7 @@ public final class GatewayClient {
 
     private byte[] exec(String path, String method, HttpRequest.BodyPublisher body, String contentType) throws IOException, GatewayException {
         HttpRequest req = HttpRequest.newBuilder(URI.create(base + path)).method(method, body).header("authorization", "Bearer " + token)
-                .header("x-mesh-pack", pack).header("content-type", contentType).timeout(Duration.ofSeconds(20)).build();
+                .header("x-mesh-pack", pack).header("x-mesh-pack-version", packVersion).header("content-type", contentType).timeout(Duration.ofSeconds(20)).build();
         HttpResponse<byte[]> r;
         try {
             r = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
@@ -86,7 +87,12 @@ public final class GatewayClient {
 
     /** One-time, 60 s ticket the relay checks in the Minecraft handshake. */
     public record WorldInfo(String id, String name, String mcVersion, String role, String state, String host, long takeoverInS,
-            boolean hostReady, long syncDone, long syncTotal) { }
+            boolean hostReady, long syncDone, long syncTotal, String packVersion) {
+        public WorldInfo(String id, String name, String mcVersion, String role, String state, String host, long takeoverInS,
+                boolean hostReady, long syncDone, long syncTotal) {
+            this(id, name, mcVersion, role, state, host, takeoverInS, hostReady, syncDone, syncTotal, null);
+        }
+    }
 
     /** relay is the host:port guests connect to, empty when the gateway has none. */
     public record Listing(List<WorldInfo> worlds, String relay) { }
@@ -120,7 +126,8 @@ public final class GatewayClient {
                     o.get("host").isJsonNull() ? null : o.get("host").getAsString(),
                     o.has("takeover_in_s") && !o.get("takeover_in_s").isJsonNull() ? o.get("takeover_in_s").getAsLong() : -1,
                     !o.has("host_ready") || o.get("host_ready").getAsBoolean(),
-                    syncOf(o, "done"), syncOf(o, "total")));
+                    syncOf(o, "done"), syncOf(o, "total"),
+                    o.has("pack_version") && !o.get("pack_version").isJsonNull() ? o.get("pack_version").getAsString() : null));
         }
         return new Listing(out, root.has("relay") ? root.get("relay").getAsString() : "");
     }

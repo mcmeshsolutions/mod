@@ -56,6 +56,12 @@ public final class QuickPlay {
             scr.line("Create one under Shared worlds first.");
             return;
         }
+        String differs = dev.mcmesh.core.PackCheck.warning(MeshConfig.PACK_VERSION.get(), w.packVersion());
+        if (differs != null) {
+            scr.heading("Modpack version differs");
+            scr.line(differs);
+            return;
+        }
         boolean other = w.host() != null && !w.host().equalsIgnoreCase(id.name());
         if (other && w.takeoverInS() >= 0 && mayHost) {
             Standby.waitAndTake(w, l.relay(), back);
@@ -70,7 +76,7 @@ public final class QuickPlay {
             }
             // without approval to host: plain guest, no standby bidding for the lease
             String err = HostFlow.join(mayHost ? w : new GatewayClient.WorldInfo(w.id(), w.name(), w.mcVersion(), "CLIENT_ONLY", w.state(),
-                    w.host(), -1, w.hostReady(), w.syncDone(), w.syncTotal()), l.relay(), back);
+                    w.host(), -1, w.hostReady(), w.syncDone(), w.syncTotal(), w.packVersion()), l.relay(), back);
             if (err != null) {
                 scr.heading("Could not connect");
                 scr.line(err);

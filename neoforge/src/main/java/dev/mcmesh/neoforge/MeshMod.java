@@ -13,6 +13,7 @@ public final class MeshMod {
         bus.addListener((ModConfigEvent e) -> {
             if (e.getConfig().getSpec() == MeshConfig.SPEC) {
                 dev.mcmesh.core.GatewayClient.pack = MeshConfig.PACK_ID.get();
+                dev.mcmesh.core.GatewayClient.packVersion = MeshConfig.PACK_VERSION.get();
             }
         });
         LogShipper.start();
