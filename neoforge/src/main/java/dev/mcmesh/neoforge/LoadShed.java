@@ -1,6 +1,7 @@
 package dev.mcmesh.neoforge;
 
 import dev.mcmesh.core.LoadShedder;
+import dev.mcmesh.core.TickDegradation;
 import net.minecraft.server.MinecraftServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +12,7 @@ final class LoadShed {
     private static final int MIN_VIEW = 6;
     private static final int MIN_SIMULATION = 5;
     private static final LoadShedder SHEDDER = new LoadShedder();
+    private static final TickDegradation DEGRADE = new TickDegradation();
     /** Read by the heartbeat thread: the shed level (-1 unknown) and the real players online (-1 unknown). */
     private static volatile int reportedLevel = -1;
     private static volatile int reportedPlayers = -1;
@@ -37,11 +39,12 @@ final class LoadShed {
     }
 
     static synchronized void sample(MinecraftServer server) {
+        double tickMs = server.getAverageTickTimeNanos() / 1_000_000.0;
+        profileIfDegraded(server, tickMs);
         if (!enabled()) {
             reportedLevel = -1;
             return;
         }
-        double tickMs = server.getAverageTickTimeNanos() / 1_000_000.0;
         double tps = tickMs <= 50 ? 20.0 : 1000.0 / tickMs;
         int before = SHEDDER.level();
         int level = SHEDDER.update(tps, System.currentTimeMillis());
@@ -62,6 +65,18 @@ final class LoadShed {
         }
     }
 
+    /** Starts a 60 second Spark profile when ticks stay slow. Only if Spark is installed; the report link goes to the server log. */
+    private static void profileIfDegraded(MinecraftServer server, double tickMs) {
+        if ("off".equalsIgnoreCase(System.getProperty("mcmesh.sparkprofile", "on")) || !DEGRADE.update(tickMs, System.currentTimeMillis())) {
+            return;
+        }
+        if (!net.neoforged.fml.ModList.get().isLoaded("spark")) {
+            return;
+        }
+        LOG.warn("ticks averaged {} ms for over 10 s, starting a 60 s spark profile", Math.round(tickMs));
+        server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "spark profiler start --timeout 60");
+    }
+
     /** Back to the settings the server had before shedding; call when hosting stops. */
     static synchronized void restore(MinecraftServer server) {
         if (baseView >= 0) {
@@ -71,6 +86,7 @@ final class LoadShed {
         baseView = -1;
         baseSimulation = -1;
         SHEDDER.reset();
+        DEGRADE.reset();
         reportedLevel = -1;
         reportedPlayers = -1;
     }
