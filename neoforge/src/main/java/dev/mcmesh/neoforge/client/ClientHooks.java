@@ -105,7 +105,11 @@ public final class ClientHooks {
                     return;
                 }
                 java.nio.file.Path save = mc.getLevelSource().getLevelPath(id);
-                mc.setScreen(new ConvertScreen(s, save, name));
+                Gateways.confirmHosting(s, ok -> {
+                    if (ok) {
+                        mc.setScreen(new ConvertScreen(s, save, name));
+                    }
+                });
             }, Component.literal("Convert \"" + name + "\" to a shared world?"),
                     Component.literal("A copy is uploaded to the gateway, including your inventory. The original save is not changed.")));
         });

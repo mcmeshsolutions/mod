@@ -20,6 +20,7 @@ public final class MeshConfig {
     public static final ModConfigSpec.ConfigValue<String> PACK_ID;
     public static final ModConfigSpec.ConfigValue<String> MODPACK_URL;
     public static final ModConfigSpec.ConfigValue<String> MODPACK_INSTANCE;
+    public static final ModConfigSpec.ConfigValue<java.util.List<? extends String>> GATEWAYS;
 
     static {
         ModConfigSpec.Builder b = new ModConfigSpec.Builder();
@@ -40,7 +41,19 @@ public final class MeshConfig {
         DISCORD_APP = b.comment("Discord application id for rich presence; empty disables it").define("discordAppId", "");
         MODPACK_URL = b.comment("direct link to a Prism instance export (.zip); empty hides the modpack updater").define("modpackUrl", "");
         MODPACK_INSTANCE = b.comment("folder name of the Prism instance the modpack is installed into; must differ from the running instance").define("modpackInstance", "Mesh Modpack");
+        GATEWAYS = b.comment("Extra join-only gateways as \"id=https://api.url\"; hosting always uses apiUrl above")
+                .defineListAllowEmpty("gateways", java.util.List.of(), () -> "", o -> o instanceof String);
         SPEC = b.build();
+    }
+
+    /** Default gateway first. */
+    public static java.util.List<dev.mcmesh.core.GatewayList.Gateway> gateways() {
+        return dev.mcmesh.core.GatewayList.parse(API_URL.get(), GATEWAYS.get(),
+                e -> com.mojang.logging.LogUtils.getLogger().warn("ignoring gateway entry \"{}\"", e));
+    }
+
+    public static java.nio.file.Path trustedGatewaysFile() {
+        return net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get().resolve("mcmesh-trusted-gateways.txt");
     }
 
     private MeshConfig() { }

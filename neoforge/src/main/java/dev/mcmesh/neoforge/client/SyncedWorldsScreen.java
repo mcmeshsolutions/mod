@@ -2,8 +2,10 @@ package dev.mcmesh.neoforge.client;
 
 import com.mojang.logging.LogUtils;
 import dev.mcmesh.core.GatewayClient;
-import dev.mcmesh.neoforge.MeshAuth;
+import dev.mcmesh.core.GatewayException;
+import dev.mcmesh.core.GatewayList.Gateway;
 import dev.mcmesh.neoforge.MeshConfig;
+import java.util.List;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.ObjectSelectionList;
@@ -12,14 +14,16 @@ import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
 
-/** Server-list style screen over the gateway's worlds. */
+/** Server-list style screen over the worlds of every configured gateway, grouped by gateway. */
 public final class SyncedWorldsScreen extends Screen {
     private static final Logger LOG = LogUtils.getLogger();
 
     private final Screen back;
-    private volatile GatewayClient.Listing listing;
+    /** listing is null and error set when the gateway could not be reached. */
+    private record Group(Gateway gw, GatewayClient.Listing listing, String me, String error) { }
+
+    private volatile List<Group> groups = List.of();
     private volatile String message = "Contacting the gateway...";
-    private volatile String me = "";
     private volatile boolean busy;
     private volatile long fetchedAt;
     private int ticks;
@@ -34,21 +38,31 @@ public final class SyncedWorldsScreen extends Screen {
         refresh();
     }
 
-    private GatewayClient gw() throws Exception {
-        var id = MeshAuth.cached();
-        me = id.name();
-        return new GatewayClient(MeshConfig.API_URL.get(), id.token());
+    private static Group fetch(Gateway g) {
+        try {
+            String me = Gateways.identity(g).name();
+            return new Group(g, Gateways.client(g).listWorlds(), me, null);
+        } catch (Exception e) {
+            LOG.warn("listing worlds on {} failed", g.host(), e);
+            if (e instanceof GatewayException ge && ge.status == 401) {
+                Gateways.forget(g);
+            }
+            return new Group(g, null, "", e.getMessage() == null ? e.toString() : e.getMessage());
+        }
     }
 
     private void refresh() {
         Thread.ofPlatform().name("mesh-worlds").daemon().start(() -> {
-            try {
-                listing = gw().listWorlds();
-                fetchedAt = System.currentTimeMillis();
-                message = listing.worlds().isEmpty() ? "No shared worlds yet. Create one or redeem an invite code." : "";
-            } catch (Exception e) {
-                LOG.warn("listing worlds failed", e);
-                message = "Could not reach the gateway: " + (e.getMessage() == null ? e : e.getMessage());
+            List<Group> got = MeshConfig.gateways().parallelStream().map(SyncedWorldsScreen::fetch).toList();
+            groups = got;
+            fetchedAt = System.currentTimeMillis();
+            Group main = got.get(0);
+            if (got.size() > 1) {
+                message = "";
+            } else if (main.listing() == null) {
+                message = "Could not reach the gateway: " + main.error();
+            } else {
+                message = main.listing().worlds().isEmpty() ? "No shared worlds yet. Create one or redeem an invite code." : "";
             }
             if (minecraft != null) {
                 minecraft.execute(this::fill);
@@ -60,18 +74,39 @@ public final class SyncedWorldsScreen extends Screen {
         if (list == null) {
             return;
         }
-        GatewayClient.WorldInfo keep = list.getSelected() == null ? null : list.getSelected().w;
+        WorldEntry keep = list.getSelected();
         list.reset();
-        if (listing != null) {
-            for (GatewayClient.WorldInfo w : listing.worlds()) {
-                WorldEntry e = new WorldEntry(w);
+        List<Group> all = groups;
+        for (Group g : all) {
+            if (all.size() > 1) {
+                WorldEntry head = new WorldEntry(g, null);
+                list.add(head);
+                if (keep != null && keep.w == null && keep.g.gw().equals(g.gw())) {
+                    list.setSelected(head);
+                }
+            }
+            if (g.listing() == null) {
+                continue;
+            }
+            for (GatewayClient.WorldInfo w : g.listing().worlds()) {
+                WorldEntry e = new WorldEntry(g, w);
                 list.add(e);
-                if (keep != null && keep.id().equals(w.id())) {
+                if (keep != null && keep.w != null && keep.g.gw().equals(g.gw()) && keep.w.id().equals(w.id())) {
                     list.setSelected(e);
                 }
             }
         }
         updateButtons();
+    }
+
+    /** Gateway of the selected row, the default one when nothing is selected. */
+    private Gateway target() {
+        WorldEntry e = list == null ? null : list.getSelected();
+        return e == null ? Gateways.main() : e.g.gw();
+    }
+
+    private static GatewayClient.WorldInfo guestOnly(GatewayClient.WorldInfo w) {
+        return new GatewayClient.WorldInfo(w.id(), w.name(), w.mcVersion(), "CLIENT_ONLY", w.state(), w.host(), -1, w.hostReady(), w.syncDone(), w.syncTotal());
     }
 
     @Override
@@ -84,9 +119,16 @@ public final class SyncedWorldsScreen extends Screen {
         int x = width / 2 - 154;
         primary = addRenderableWidget(Button.builder(Component.literal("Join / Play"), b -> primary()).bounds(x, y1, 150, 20).build());
         invite = addRenderableWidget(Button.builder(Component.literal("Invite code"), b -> invite()).bounds(x + 154, y1, 74, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Create"), b -> minecraft.setScreen(new PromptScreen(this, "New shared world", "World name", this::create)))
+        addRenderableWidget(Button.builder(Component.literal("Create"), b -> Gateways.confirmHosting(this, ok -> {
+            if (ok) {
+                minecraft.setScreen(new PromptScreen(this, "New shared world", "World name", this::create));
+            }
+        }))
                 .bounds(x + 232, y1, 76, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Redeem"), b -> minecraft.setScreen(new PromptScreen(this, "Invite code", "Code", this::redeem)))
+        addRenderableWidget(Button.builder(Component.literal("Redeem"), b -> {
+            Gateway g = target();
+            minecraft.setScreen(new PromptScreen(this, "Invite code for " + g.host(), "Code", code -> redeem(g, code)));
+        })
                 .bounds(x, y2, 56, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Refresh"), b -> { message = "Refreshing..."; refresh(); })
                 .bounds(x + 60, y2, 56, 20).build());
@@ -99,19 +141,19 @@ public final class SyncedWorldsScreen extends Screen {
     }
 
     private void updateButtons() {
-        GatewayClient.WorldInfo w = selected();
-        primary.active = w != null && !busy && !(w.host() != null && !w.hostReady());
-        requestMods.visible = !dev.mcmesh.neoforge.ModGuard.offending.isEmpty();
-        requestMods.active = !busy;
+        WorldEntry sel = list == null ? null : list.getSelected();
+        GatewayClient.WorldInfo w = sel == null ? null : sel.w;
+        boolean joinOnly = sel != null && !sel.g.gw().isDefault();
+        boolean hostedByOther = w != null && w.host() != null && !w.host().equalsIgnoreCase(sel.g.me());
+        primary.active = w != null && !busy && !(w.host() != null && !w.hostReady()) && !(joinOnly && !hostedByOther);
+        requestMods.visible = !dev.mcmesh.neoforge.ModGuard.offending.isEmpty() && !joinOnly;
+        requestMods.active = !busy && w != null;
         invite.active = w != null && w.role().equals("ADMIN") && !busy;
         if (w != null) {
-            boolean hostedByOther = w.host() != null && !w.host().equalsIgnoreCase(me);
-            primary.setMessage(Component.literal(w.host() != null && !w.hostReady() ? "Host is loading..." : !hostedByOther ? "Play World" : w.takeoverInS() >= 0 ? "Join and Take Over" : "Join World"));
+            primary.setMessage(Component.literal(w.host() != null && !w.hostReady() ? "Host is loading..."
+                    : joinOnly ? (hostedByOther ? "Join World" : "Nobody is hosting")
+                    : !hostedByOther ? "Play World" : w.takeoverInS() >= 0 ? "Join and Take Over" : "Join World"));
         }
-    }
-
-    private GatewayClient.WorldInfo selected() {
-        return list == null || list.getSelected() == null ? null : list.getSelected().w;
     }
 
     @Override
@@ -146,12 +188,41 @@ public final class SyncedWorldsScreen extends Screen {
     }
 
     private void primary() {
-        GatewayClient.WorldInfo w = selected();
-        if (w == null) {
+        WorldEntry sel = list.getSelected();
+        if (sel == null || sel.w == null) {
             return;
         }
-        String relay = listing.relay();
-        boolean hostedByOther = w.host() != null && !w.host().equalsIgnoreCase(me);
+        GatewayClient.WorldInfo w = sel.w;
+        Gateway g = sel.g.gw();
+        String relay = sel.g.listing().relay();
+        boolean hostedByOther = w.host() != null && !w.host().equalsIgnoreCase(sel.g.me());
+        if (!g.isDefault()) {
+            if (hostedByOther) {
+                run("mesh-join", "Joining " + w.name() + "...", () -> {
+                    GatewayClient.ticketRoute(w.id(), Gateways.client(g));
+                    return HostFlow.join(guestOnly(w), relay, this);
+                });
+            }
+            return;
+        }
+        if (w.role().equals("CLIENT_ONLY")) {
+            play(w, relay, hostedByOther);
+            return;
+        }
+        Gateways.confirmHosting(this, ok -> {
+            if (ok) {
+                play(w, relay, hostedByOther);
+            } else if (hostedByOther) {
+                // declined: plain guest, no standby bidding for the lease
+                play(guestOnly(w), relay, true);
+            } else {
+                message = "Hosting was not approved for " + g.host() + ".";
+            }
+        });
+    }
+
+    private void play(GatewayClient.WorldInfo w, String relay, boolean hostedByOther) {
+        GatewayClient.ticketRoute(null, null);
         if (hostedByOther && w.takeoverInS() >= 0) {
             long left = Math.max(0, w.takeoverInS() - (System.currentTimeMillis() - fetchedAt) / 1000);
             Standby.waitAndTake(new GatewayClient.WorldInfo(w.id(), w.name(), w.mcVersion(), w.role(), w.state(), w.host(), left, w.hostReady(), w.syncDone(), w.syncTotal()), relay, this);
@@ -168,33 +239,38 @@ public final class SyncedWorldsScreen extends Screen {
     }
 
     private void requestMods() {
-        GatewayClient.WorldInfo w = selected();
+        WorldEntry sel = list.getSelected();
         var mods = dev.mcmesh.neoforge.ModGuard.offending;
-        if (w == null || mods.isEmpty()) {
+        if (sel == null || sel.w == null || mods.isEmpty()) {
             return;
         }
+        GatewayClient.WorldInfo w = sel.w;
+        Gateway g = sel.g.gw();
         run("mesh-modreq", "Sending request...", () -> {
-            gw().requestMods(w.id(), mods);
+            Gateways.client(g).requestMods(w.id(), mods);
             return "Requested " + mods.size() + " mod(s). An admin can allow them in the web panel, then try again.";
         });
     }
 
     private void invite() {
-        GatewayClient.WorldInfo w = selected();
-        if (w == null) {
+        WorldEntry sel = list.getSelected();
+        if (sel == null || sel.w == null) {
             return;
         }
+        GatewayClient.WorldInfo w = sel.w;
+        Gateway g = sel.g.gw();
         run("mesh-invite", "Creating invite...", () -> {
-            String code = gw().createInvite(w.id(), "HOST_ELIGIBLE");
+            String code = Gateways.client(g).createInvite(w.id(), "HOST_ELIGIBLE");
             minecraft.execute(() -> minecraft.keyboardHandler.setClipboard(code));
             return "Invite code " + code + " copied. It works once.";
         });
     }
 
     private void panel() {
-        run("mesh-panel", "Opening the web panel...", () -> {
-            String code = gw().panelCode();
-            String url = dev.mcmesh.neoforge.MeshConfig.API_URL.get().replaceAll("/+$", "") + "/panel";
+        Gateway g = target();
+        run("mesh-panel", "Opening the web panel of " + g.host() + "...", () -> {
+            String code = Gateways.client(g).panelCode();
+            String url = g.apiUrl() + "/panel";
             minecraft.execute(() -> {
                 minecraft.keyboardHandler.setClipboard(code);
                 net.minecraft.Util.getPlatform().openUri(url);
@@ -207,9 +283,9 @@ public final class SyncedWorldsScreen extends Screen {
         run("mesh-create", "Creating " + name + "...", () -> HostFlow.create(name, this, s -> message = s + "..."));
     }
 
-    private void redeem(String code) {
+    private void redeem(Gateway g, String code) {
         run("mesh-redeem", "Redeeming...", () -> {
-            gw().redeemInvite(code);
+            Gateways.client(g).redeemInvite(code);
             refresh();
             return "Invite accepted.";
         });
@@ -249,14 +325,29 @@ public final class SyncedWorldsScreen extends Screen {
     }
 
     private final class WorldEntry extends ObjectSelectionList.Entry<WorldEntry> {
+        final Group g;
+        /** null for the gateway header row. */
         final GatewayClient.WorldInfo w;
 
-        WorldEntry(GatewayClient.WorldInfo w) {
+        WorldEntry(Group g, GatewayClient.WorldInfo w) {
+            this.g = g;
             this.w = w;
+        }
+
+        private void header(GuiGraphics gfx, int top, int left) {
+            Gateway gw = g.gw();
+            gfx.drawString(font, gw.isDefault() ? gw.host() : gw.id() + "  (" + gw.host() + ")", left + 3, top + 8, 0xFFFFFF, false);
+            String sub = g.listing() == null ? "Unreachable: " + g.error()
+                    : (gw.isDefault() ? "Home gateway" : "Join only") + ", " + g.listing().worlds().size() + " world(s)";
+            gfx.drawString(font, font.plainSubstrByWidth(sub, 296), left + 3, top + 20, g.listing() == null ? 0xFF5555 : 0x888888, false);
         }
 
         @Override
         public void render(GuiGraphics g, int index, int top, int left, int width, int height, int mx, int my, boolean hover, float dt) {
+            if (w == null) {
+                header(g, top, left);
+                return;
+            }
             g.drawString(font, w.name(), left + 3, top + 2, 0xFFFFFF, false);
             boolean hosted = w.host() != null;
             String status = hosted ? "Hosted by " + w.host() : "Idle, no host";
@@ -265,7 +356,7 @@ public final class SyncedWorldsScreen extends Screen {
                         ? String.format(": %,d / %,d files (%d%%)", w.syncDone(), w.syncTotal(), w.syncDone() * 100 / w.syncTotal())
                         : "");
             }
-            if (hosted && w.takeoverInS() >= 0) {
+            if (hosted && w.takeoverInS() >= 0 && this.g.gw().isDefault()) {
                 long s = Math.max(0, w.takeoverInS() - (System.currentTimeMillis() - fetchedAt) / 1000);
                 status += s == 0 ? "  |  This machine can take over hosting"
                         : String.format("  |  This machine can take over hosting in %02d:%02d", s / 60, s % 60);
@@ -282,7 +373,7 @@ public final class SyncedWorldsScreen extends Screen {
 
         @Override
         public Component getNarration() {
-            return Component.literal(w.name());
+            return Component.literal(w == null ? g.gw().host() : w.name());
         }
     }
 }
