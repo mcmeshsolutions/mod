@@ -33,6 +33,15 @@ final class WorldSync {
 
     /** Returns true when the revision is empty, meaning the local folder (if any) is the world to seed from. */
     static boolean sync(GatewayClient gw, Path root, String rev) throws Exception {
+        return sync(gw, root, rev, new boolean[1]);
+    }
+
+    /**
+     * @param keptLocalTerrain set to true when the revision lists no chunks at all but the local folder has some: the gateway
+     *     never received this world's terrain, so the local chunks are the only copy. They are kept, not wiped, and the caller
+     *     should upload them in full on the next save.
+     */
+    static boolean sync(GatewayClient gw, Path root, String rev, boolean[] keptLocalTerrain) throws Exception {
         Path kept = dev.mcmesh.core.RejectedCopy.setAside(root);
         if (kept != null) {
             LOG.warn("the gateway refused the last save of this world; that copy is kept in {}", kept);
@@ -50,12 +59,19 @@ final class WorldSync {
         if (have == null && hasChunkData(root)) {
             throw new IOException("refusing to overwrite an unmanaged world in " + root + ", move it away first");
         }
+        boolean terrainOnlyHere = files.chunks().isEmpty() && hasChunkData(root);
+        if (terrainOnlyHere) {
+            keptLocalTerrain[0] = true;
+            LOG.warn("the gateway has no terrain for this world; keeping the local chunks and uploading them on the next save");
+        }
         boolean incremental = false;
         if (have != null && hasChunkData(root) && dev.mcmesh.core.LocalWorldCheck.untouchedSince(root, marker)) {
             incremental = tryIncremental(gw, root, have, rev);
         }
         if (!incremental) {
-            wipeChunkStores(root);
+            if (!terrainOnlyHere) {
+                wipeChunkStores(root);
+            }
             Files.createDirectories(root);
             Sink sink = new Sink(root);
             try {

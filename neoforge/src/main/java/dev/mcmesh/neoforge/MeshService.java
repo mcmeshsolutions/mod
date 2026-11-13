@@ -52,6 +52,8 @@ public final class MeshService {
     }
 
     private final AuxSync aux = new AuxSync();
+    /** Set once the world matches the gateway revision; null before that. */
+    private volatile RegionScan regions;
     private boolean closed;
     private Thread exitHook;
 
@@ -200,10 +202,14 @@ public final class MeshService {
             } catch (Exception e) {
                 LOG.warn("safe boot check failed, keeping the normal path: {}", e.toString());
             }
-            boolean empty = WorldSync.sync(gw, worldRoot, h.lease().baseRev());
+            boolean[] keptTerrain = new boolean[1];
+            boolean empty = WorldSync.sync(gw, worldRoot, h.lease().baseRev(), keptTerrain);
             if (empty && WorldSync.hasChunkData(worldRoot)) {
                 s.seed();
             }
+            // from here on, chunks stamped later than this are changes the gateway does not have; when it has none of the
+            // terrain at all, everything on disk counts, so the first save uploads the whole world
+            s.regions = new RegionScan(keptTerrain[0] ? 0 : System.currentTimeMillis());
         } catch (Exception e) {
             s.session.close();
             try {
@@ -223,6 +229,19 @@ public final class MeshService {
                     uploader::lastBarrierSeq, () -> uploader.flush(true)));
         } catch (Exception e) {
             LOG.warn("device key unavailable, commits are unsigned: {}", e.toString());
+        }
+    }
+
+    /** Uploads chunks found changed on disk; never lets a scan problem stop a save. */
+    private void scanRegions() {
+        RegionScan r = regions;
+        if (r == null) {
+            return;
+        }
+        try {
+            r.scan(worldRoot, uploader);
+        } catch (Exception e) {
+            LOG.warn("region scan failed, relying on the write hook only: {}", e.toString());
         }
     }
 
@@ -329,6 +348,7 @@ public final class MeshService {
         if (fenced || commits.refused()) {
             return;
         }
+        scanRegions();
         aux.scan(worldRoot, uploader);
         uploader.flush(true);
         if (commit("AUTOSAVE", false)) {
@@ -375,6 +395,7 @@ public final class MeshService {
         }
         try {
             if (!fenced && !commits.refused()) {
+                scanRegions();
                 aux.scan(worldRoot, uploader);
                 uploader.flush(true);
                 commit("SHUTDOWN", true);
