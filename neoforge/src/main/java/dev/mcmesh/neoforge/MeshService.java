@@ -191,6 +191,15 @@ public final class MeshService {
         s.exitHook = new Thread(s::shutdown, "mesh-exit");
         Runtime.getRuntime().addShutdownHook(s.exitHook);
         try {
+            try {
+                var files = gw.listRevision(h.lease().baseRev());
+                boolean gatewayHasData = !(files.chunks().isEmpty() && files.aux().isEmpty());
+                if (dev.mcmesh.core.SafeBoot.prepare(s.crashMarker(), worldRoot, gatewayHasData)) {
+                    LOG.warn("the last hosting run of {} did not stop cleanly: rebuilding the local world from the gateway, the old copy is kept next to it", world);
+                }
+            } catch (Exception e) {
+                LOG.warn("safe boot check failed, keeping the normal path: {}", e.toString());
+            }
             boolean empty = WorldSync.sync(gw, worldRoot, h.lease().baseRev());
             if (empty && WorldSync.hasChunkData(worldRoot)) {
                 s.seed();

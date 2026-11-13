@@ -10,6 +10,18 @@ import java.util.stream.Stream;
 public final class CrashMarker {
     private CrashMarker() { }
 
+    /** Start time of the unclean previous run, or -1 when the last run ended cleanly. Reads only. */
+    public static long peek(Path marker) {
+        if (!Files.exists(marker)) {
+            return -1;
+        }
+        try {
+            return Long.parseLong(Files.readString(marker).trim());
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
     /** Writes the marker and returns the start time of the unclean previous run, or -1 when the last run ended cleanly. */
     public static long begin(Path marker, long nowMs) {
         long previous = -1;
