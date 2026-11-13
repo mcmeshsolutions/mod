@@ -16,6 +16,62 @@ public final class WorldDownloader {
         void chunk(RevisionFiles.Chunk c, byte[] data) throws IOException;
 
         void aux(RevisionFiles.Aux a, byte[] data) throws IOException;
+
+        /** The chunk exists in the old revision but not in the new one. Full downloads never call this. */
+        default void removeChunk(RevisionFiles.Chunk c) throws IOException { }
+    }
+
+    /** What differs between two revisions: everything to fetch, and the chunks that disappeared. */
+    public record Delta(List<RevisionFiles.Chunk> chunks, List<RevisionFiles.Aux> aux, List<RevisionFiles.Chunk> removedChunks) {
+        public int fetches() {
+            return chunks.size() + aux.size();
+        }
+    }
+
+    private static String key(RevisionFiles.Chunk c) {
+        return c.dim() + "|" + c.kind() + "|" + c.cx() + "," + c.cz();
+    }
+
+    /** Pure comparison of two listings: new or changed entries of `want`, and chunks of `have` that `want` lacks. */
+    public static Delta plan(RevisionFiles have, RevisionFiles want) {
+        java.util.Map<String, byte[]> oldChunks = new java.util.HashMap<>();
+        have.chunks().forEach(c -> oldChunks.put(key(c), c.hash()));
+        java.util.Map<String, byte[]> oldAux = new java.util.HashMap<>();
+        have.aux().forEach(a -> oldAux.put(a.path(), a.hash()));
+        List<RevisionFiles.Chunk> chunks = new ArrayList<>();
+        java.util.Set<String> wanted = new java.util.HashSet<>();
+        for (RevisionFiles.Chunk c : want.chunks()) {
+            wanted.add(key(c));
+            if (!Arrays.equals(oldChunks.get(key(c)), c.hash())) {
+                chunks.add(c);
+            }
+        }
+        List<RevisionFiles.Aux> aux = new ArrayList<>();
+        for (RevisionFiles.Aux a : want.aux()) {
+            if (!Arrays.equals(oldAux.get(a.path()), a.hash())) {
+                aux.add(a);
+            }
+        }
+        List<RevisionFiles.Chunk> removed = new ArrayList<>();
+        for (RevisionFiles.Chunk c : have.chunks()) {
+            if (!wanted.contains(key(c))) {
+                removed.add(c);
+            }
+        }
+        return new Delta(chunks, aux, removed);
+    }
+
+    /**
+     * Brings a local copy that matches `haveRev` up to `rev` by fetching only what changed. The caller must know the local
+     * copy really is `haveRev`; any GatewayException (for example a pruned old revision) means: do a full download instead.
+     */
+    public static Delta downloadDelta(GatewayClient gw, String haveRev, String rev, Sink sink, Progress progress) throws IOException, GatewayException {
+        Delta d = plan(gw.listRevision(haveRev), gw.listRevision(rev));
+        for (RevisionFiles.Chunk c : d.removedChunks()) {
+            sink.removeChunk(c);
+        }
+        fetchAll(gw, d.chunks(), d.aux(), sink, progress);
+        return d;
     }
 
     public interface Progress {
@@ -32,16 +88,20 @@ public final class WorldDownloader {
 
     public static int download(GatewayClient gw, String rev, Sink sink, Progress progress) throws IOException, GatewayException {
         RevisionFiles files = gw.listRevision(rev);
+        return fetchAll(gw, files.chunks(), files.aux(), sink, progress);
+    }
+
+    private static int fetchAll(GatewayClient gw, List<RevisionFiles.Chunk> chunks, List<RevisionFiles.Aux> aux, Sink sink, Progress progress) throws IOException, GatewayException {
         ExecutorService pool = Executors.newFixedThreadPool(THREADS);
         try {
             List<Future<?>> jobs = new ArrayList<>();
-            long total = files.chunks().size() + files.aux().size();
+            long total = chunks.size() + aux.size();
             AtomicLong done = new AtomicLong();
             AtomicLong bytes = new AtomicLong();
             if (progress != null) {
                 progress.update(0, total, 0);
             }
-            for (RevisionFiles.Chunk c : files.chunks()) {
+            for (RevisionFiles.Chunk c : chunks) {
                 jobs.add(pool.submit(() -> {
                     byte[] d = fetch(gw, c.hash());
                     sink.chunk(c, d);
@@ -49,7 +109,7 @@ public final class WorldDownloader {
                     return null;
                 }));
             }
-            for (RevisionFiles.Aux a : files.aux()) {
+            for (RevisionFiles.Aux a : aux) {
                 jobs.add(pool.submit(() -> {
                     byte[] d = fetch(gw, a.hash());
                     sink.aux(a, d);

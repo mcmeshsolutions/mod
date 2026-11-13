@@ -50,16 +50,22 @@ final class WorldSync {
         if (have == null && hasChunkData(root)) {
             throw new IOException("refusing to overwrite an unmanaged world in " + root + ", move it away first");
         }
-        wipeChunkStores(root);
-        Files.createDirectories(root);
-        Sink sink = new Sink(root);
-        try {
-            SyncProgress.begin();
-            int n = WorldDownloader.download(gw, rev, sink, SyncProgress::update);
-            LOG.info("downloaded {} files for {}", n, rev);
-        } finally {
-            sink.close();
-            SyncProgress.end();
+        boolean incremental = false;
+        if (have != null && hasChunkData(root) && dev.mcmesh.core.LocalWorldCheck.untouchedSince(root, marker)) {
+            incremental = tryIncremental(gw, root, have, rev);
+        }
+        if (!incremental) {
+            wipeChunkStores(root);
+            Files.createDirectories(root);
+            Sink sink = new Sink(root);
+            try {
+                SyncProgress.begin();
+                int n = WorldDownloader.download(gw, rev, sink, SyncProgress::update);
+                LOG.info("downloaded {} files for {}", n, rev);
+            } finally {
+                sink.close();
+                SyncProgress.end();
+            }
         }
         java.util.Set<String> keep = new java.util.HashSet<>();
         files.aux().forEach(a -> keep.add(a.path()));
@@ -70,6 +76,31 @@ final class WorldSync {
         }
         Files.writeString(marker, rev, StandardCharsets.UTF_8);
         return false;
+    }
+
+    /**
+     * The local copy equals revision `have`, so only what changed since then needs to come down. Anything unexpected
+     * (a pruned old revision, a network error halfway) returns false and the caller does the normal full download,
+     * which wipes the chunk stores first, so a half applied delta never survives.
+     */
+    private static boolean tryIncremental(GatewayClient gw, Path root, String have, String rev) {
+        Sink sink = new Sink(root);
+        try {
+            SyncProgress.begin();
+            var d = WorldDownloader.downloadDelta(gw, have, rev, sink, SyncProgress::update);
+            LOG.info("incremental sync {} to {}: {} chunks and {} extra files fetched, {} chunks removed", have, rev, d.chunks().size(), d.aux().size(), d.removedChunks().size());
+            return true;
+        } catch (Exception e) {
+            LOG.warn("incremental sync from {} failed, downloading the whole world: {}", have, e.toString());
+            return false;
+        } finally {
+            try {
+                sink.close();
+            } catch (IOException e) {
+                LOG.warn("closing region files after the incremental sync failed: {}", e.toString());
+            }
+            SyncProgress.end();
+        }
     }
 
     static boolean hasChunkData(Path root) throws IOException {
@@ -129,6 +160,27 @@ final class WorldSync {
             try (DataOutputStream out = rf.getChunkDataOutputStream(new ChunkPos(c.cx(), c.cz()))) {
                 out.write(data);
             }
+        }
+
+        @Override
+        public synchronized void removeChunk(RevisionFiles.Chunk c) throws IOException {
+            if (!KINDS.contains(c.kind())) {
+                return;
+            }
+            int rx = c.cx() >> 5;
+            int rz = c.cz() >> 5;
+            Path folder = WorldPaths.dirOf(root, c.dim()).resolve(c.kind());
+            if (!Files.exists(folder.resolve("r." + rx + "." + rz + ".mca"))) {
+                return;
+            }
+            String id = c.dim() + "|" + c.kind() + "|" + rx + "," + rz;
+            RegionFile rf = files.get(id);
+            if (rf == null) {
+                ResourceKey<net.minecraft.world.level.Level> key = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(c.dim()));
+                rf = new RegionFile(new RegionStorageInfo(root.getFileName().toString(), key, c.kind()), folder.resolve("r." + rx + "." + rz + ".mca"), folder, false);
+                files.put(id, rf);
+            }
+            rf.clear(new ChunkPos(c.cx(), c.cz()));
         }
 
         @Override
