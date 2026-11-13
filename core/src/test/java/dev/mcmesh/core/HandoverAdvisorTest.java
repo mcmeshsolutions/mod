@@ -64,4 +64,21 @@ class HandoverAdvisorTest {
         assertNull(BatteryProbe.read(root));
         assertNull(BatteryProbe.read(root.resolve("missing")));
     }
+
+    @Test
+    void aBadUplinkAloneCanPreferOrForceAHandover() {
+        assertEquals(STAY, HandoverAdvisor.decide(null, -1), "unknown never triggers");
+        assertEquals(STAY, HandoverAdvisor.decide(null, 50));
+        assertEquals(PREFER_HANDOVER, HandoverAdvisor.decide(null, 1.9));
+        assertEquals(STAY, HandoverAdvisor.decide(null, 2.0));
+        assertEquals(HAND_OVER_NOW, HandoverAdvisor.decide(null, 0.4));
+    }
+
+    @Test
+    void theWorseOfBatteryAndLinkWins() {
+        assertEquals(HAND_OVER_NOW, HandoverAdvisor.decide(new Battery(5, true), 100));
+        assertEquals(HAND_OVER_NOW, HandoverAdvisor.decide(new Battery(80, true), 0.1));
+        assertEquals(PREFER_HANDOVER, HandoverAdvisor.decide(new Battery(15, true), 1.0));
+        assertEquals(STAY, HandoverAdvisor.decide(new Battery(80, true), 30));
+    }
 }

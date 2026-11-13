@@ -7,12 +7,25 @@ public final class HandoverAdvisor {
     /** percent 0 to 100; only a battery that is actually discharging counts as a problem. */
     public record Battery(int percent, boolean discharging) { }
 
+    static final double POOR_UPLINK_MBPS = 2.0;
+    static final double UNUSABLE_UPLINK_MBPS = 0.5;
     static final int NOW_AT_OR_BELOW = 8;
     static final int PREFER_AT_OR_BELOW = 20;
 
     private HandoverAdvisor() { }
 
     public static Decision decide(Battery b) {
+        return decide(b, -1);
+    }
+
+    /** `uploadMbps` below zero means unknown. The worse of the two verdicts wins. */
+    public static Decision decide(Battery b, double uploadMbps) {
+        Decision battery = batteryVerdict(b);
+        Decision link = uploadMbps < 0 ? Decision.STAY : uploadMbps < UNUSABLE_UPLINK_MBPS ? Decision.HAND_OVER_NOW : uploadMbps < POOR_UPLINK_MBPS ? Decision.PREFER_HANDOVER : Decision.STAY;
+        return battery.ordinal() >= link.ordinal() ? battery : link;
+    }
+
+    private static Decision batteryVerdict(Battery b) {
         if (b == null || !b.discharging() || b.percent() < 0 || b.percent() > 100) {
             return Decision.STAY;
         }

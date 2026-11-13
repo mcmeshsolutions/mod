@@ -72,6 +72,11 @@ public final class GatewayClient {
         exec("/v1/logs", "POST", HttpRequest.BodyPublishers.ofByteArray(text), "text/plain");
     }
 
+    /** Uploads a probe body the gateway discards, so the caller can time its own uplink. */
+    public void bandwidthProbe(byte[] body) throws IOException, GatewayException {
+        exec("/v1/bandwidth", "POST", HttpRequest.BodyPublishers.ofByteArray(body), "application/octet-stream");
+    }
+
     public void crashReport(String world, String text) throws IOException, GatewayException {
         JsonObject b = new JsonObject();
         b.addProperty("text", text);

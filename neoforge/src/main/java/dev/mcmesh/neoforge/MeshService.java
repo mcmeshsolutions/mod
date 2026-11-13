@@ -105,6 +105,11 @@ public final class MeshService {
         handedOff = true;
     }
 
+    /** Megabits per second of one upload to the gateway, or -1 when it failed. Blocks, so never call it on the server thread. */
+    public double probeUploadMbps() {
+        return dev.mcmesh.core.BandwidthProbe.measure(gw);
+    }
+
     public boolean fenced() {
         return fenced;
     }
