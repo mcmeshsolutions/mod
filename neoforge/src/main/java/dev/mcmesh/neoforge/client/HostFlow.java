@@ -25,6 +25,10 @@ public final class HostFlow {
 
     /** Returns a message when this machine could not become the host, null when the world is opening. */
     public static String host(GatewayClient.WorldInfo w, Screen back, Consumer<String> status) throws Exception {
+        String memory = dev.mcmesh.core.PreFlight.heapProblem(Runtime.getRuntime().maxMemory(), MeshConfig.PACK_MIN_HEAP_MB.get());
+        if (memory != null) {
+            return memory;
+        }
         Minecraft mc = Minecraft.getInstance();
         Standby.stop();
         MeshService.afterHandoff = Standby::rejoin;
@@ -105,6 +109,10 @@ public final class HostFlow {
 
     /** Connects to a world another player is hosting, through the gateway relay. */
     public static String join(GatewayClient.WorldInfo w, String relay, Screen back) {
+        String memory = dev.mcmesh.core.PreFlight.heapProblem(Runtime.getRuntime().maxMemory(), MeshConfig.PACK_MIN_HEAP_MB.get());
+        if (memory != null) {
+            return memory;
+        }
         if (relay.isEmpty()) {
             return "This gateway has no relay, so guests cannot connect.";
         }

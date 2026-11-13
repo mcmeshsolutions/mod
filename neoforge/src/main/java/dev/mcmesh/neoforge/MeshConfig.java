@@ -21,6 +21,7 @@ public final class MeshConfig {
     public static final ModConfigSpec.ConfigValue<String> PLAYER_NAME;
     public static final ModConfigSpec.ConfigValue<String> PACK_ID;
     public static final ModConfigSpec.ConfigValue<String> PACK_VERSION;
+    public static final ModConfigSpec.IntValue PACK_MIN_HEAP_MB;
     public static final ModConfigSpec.ConfigValue<String> PACK_AUTHOR_KEY;
     public static final ModConfigSpec.ConfigValue<String> PACK_UPDATE_URL;
     public static final ModConfigSpec.BooleanValue PACK_AUTO_UPDATE;
@@ -32,6 +33,7 @@ public final class MeshConfig {
         ModConfigSpec.Builder b = new ModConfigSpec.Builder();
         PACK_ID = b.comment("Modpack this install belongs to; a gateway only shows and accepts worlds of the same pack").define("packId", "default");
         PACK_VERSION = b.comment("Version of this modpack, dot-separated integers such as 1.4.0").define("packVersion", "0");
+        PACK_MIN_HEAP_MB = b.comment("Memory in MB this modpack needs for the game, shipped by the pack author; 0 means no check. Hosting or joining is refused with an explanation when the instance has less.").defineInRange("packMinHeapMb", 0, 0, 262144);
         PACK_AUTHOR_KEY = b.comment("Pack author Ed25519 public key (base64url, 32 bytes); empty disables auto-update").define("packAuthorKey", "");
         PACK_UPDATE_URL = b.comment("https URL of the signed pack manifest; the only place updates come from").define("packUpdateUrl", "");
         PACK_AUTO_UPDATE = b.comment("set to false to never download pack updates").define("packAutoUpdate", true);
