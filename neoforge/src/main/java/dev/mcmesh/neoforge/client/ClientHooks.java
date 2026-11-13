@@ -64,6 +64,55 @@ public final class ClientHooks {
     }
 
     @SubscribeEvent
+    public static void commands(net.neoforged.neoforge.client.event.RegisterClientCommandsEvent e) {
+        var root = net.minecraft.commands.Commands.literal("meshvote");
+        root.then(net.minecraft.commands.Commands.literal("status").executes(c -> vote("status")));
+        root.then(net.minecraft.commands.Commands.literal("propose").executes(c -> vote("propose")));
+        root.then(net.minecraft.commands.Commands.literal("yes").executes(c -> vote("yes")));
+        root.then(net.minecraft.commands.Commands.literal("no").executes(c -> vote("no")));
+        root.executes(c -> vote("status"));
+        e.getDispatcher().register(root);
+    }
+
+    /** Runs a vote action off the render thread and prints the answer in chat. */
+    private static int vote(String action) {
+        Minecraft mc = Minecraft.getInstance();
+        String world = HostHealthHud.joinedWorld(mc);
+        if (world == null) {
+            say(mc, "You are not playing in a mesh world as a guest.");
+            return 0;
+        }
+        Thread.ofVirtual().name("mesh-vote").start(() -> {
+            try {
+                var gw = new dev.mcmesh.core.GatewayClient(dev.mcmesh.neoforge.MeshConfig.API_URL.get(), dev.mcmesh.neoforge.MeshAuth.cached().token());
+                dev.mcmesh.core.GatewayClient.VoteState st = switch (action) {
+                    case "propose" -> {
+                        var hw = dev.mcmesh.core.GatewayClient.hwScore;
+                        yield gw.proposeHandover(world, 1, hw == null ? Runtime.getRuntime().availableProcessors() : hw.get());
+                    }
+                    case "yes" -> gw.castVote(world, true);
+                    case "no" -> gw.castVote(world, false);
+                    default -> gw.voteState(world);
+                };
+                say(mc, dev.mcmesh.core.VoteText.status(st));
+            } catch (dev.mcmesh.core.GatewayException ex) {
+                say(mc, dev.mcmesh.core.VoteText.error(ex.code));
+            } catch (Exception ex) {
+                say(mc, "Could not reach the gateway: " + ex.getMessage());
+            }
+        });
+        return 1;
+    }
+
+    private static void say(Minecraft mc, String text) {
+        mc.execute(() -> {
+            if (mc.player != null) {
+                mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("[mesh] " + text), false);
+            }
+        });
+    }
+
+    @SubscribeEvent
     public static void hud(net.neoforged.neoforge.client.event.RenderGuiEvent.Post e) {
         try {
             var health = HostHealthHud.line();

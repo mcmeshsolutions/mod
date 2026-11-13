@@ -72,6 +72,42 @@ public final class GatewayClient {
         exec("/v1/logs", "POST", HttpRequest.BodyPublishers.ofByteArray(text), "text/plain");
     }
 
+    public record VoteRound(String candidate, int improvementPct, int yes, int no, int needed, Boolean myVote, boolean approved, long expiresInS) { }
+
+    public record VoteState(boolean enabled, VoteRound round) { }
+
+    public VoteState voteState(String world) throws IOException, GatewayException {
+        byte[] r = exec("/v1/worlds/" + world + "/handover-vote", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
+        return parseVote(JsonParser.parseString(new String(r)).getAsJsonObject());
+    }
+
+    /** An eligible guest with clearly stronger hardware asks to take the world over; needs the owner to have switched the vote on. */
+    public VoteState proposeHandover(String world, int tier, double score) throws IOException, GatewayException {
+        JsonObject b = new JsonObject();
+        b.addProperty("tier", tier);
+        b.addProperty("score", score);
+        return parseVote(post("/v1/worlds/" + world + "/handover-vote/propose", b));
+    }
+
+    public VoteState castVote(String world, boolean yes) throws IOException, GatewayException {
+        JsonObject b = new JsonObject();
+        b.addProperty("yes", yes);
+        return parseVote(post("/v1/worlds/" + world + "/handover-vote", b));
+    }
+
+    static VoteState parseVote(JsonObject o) {
+        boolean enabled = !o.has("enabled") || o.get("enabled").getAsBoolean();
+        JsonElement re = o.get("round");
+        if (re == null || re.isJsonNull()) {
+            return new VoteState(enabled, null);
+        }
+        JsonObject r = re.getAsJsonObject();
+        JsonElement mv = r.get("my_vote");
+        return new VoteState(enabled, new VoteRound(r.get("candidate").getAsString(), r.get("improvement_pct").getAsInt(), r.get("yes").getAsInt(),
+                r.get("no").getAsInt(), r.get("needed").getAsInt(), mv == null || mv.isJsonNull() ? null : mv.getAsBoolean(),
+                r.get("approved").getAsBoolean(), r.get("expires_in_s").getAsLong()));
+    }
+
     /** The load level and real player count the world's host last reported, or UNKNOWN. */
     public HostHealth hostHealth(String worldId) throws IOException, GatewayException {
         byte[] r = exec("/v1/worlds", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");

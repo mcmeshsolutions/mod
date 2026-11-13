@@ -50,7 +50,7 @@ final class HostHealthHud {
     record Line(String text, int color) { }
 
     /** The world id when the current connection is the relay of a mesh world this client joined, else null. */
-    private static String joinedWorld(Minecraft mc) {
+    static String joinedWorld(Minecraft mc) {
         var server = mc.getCurrentServer();
         if (server == null || dev.mcmesh.neoforge.MeshTap.joinWorld.isEmpty() || dev.mcmesh.neoforge.MeshTap.joinHost.isEmpty()) {
             return null;
