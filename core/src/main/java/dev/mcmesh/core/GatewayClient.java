@@ -19,6 +19,8 @@ public final class GatewayClient {
     private final String base;
     private final String token;
     /** Modpack id sent with every request; worlds of other packs are invisible and refuse joins. */
+    /** Protocol level this build speaks, sent as x-mesh-client so a gateway can refuse builds that are too old. 0 means none sent. */
+    public static final int PROTOCOL = 1;
     public static volatile String pack = "default";
     public static volatile String packVersion = "0";
 
@@ -39,7 +41,7 @@ public final class GatewayClient {
 
     private byte[] exec(String path, String method, HttpRequest.BodyPublisher body, String contentType) throws IOException, GatewayException {
         HttpRequest req = HttpRequest.newBuilder(URI.create(base + path)).method(method, body).header("authorization", "Bearer " + token)
-                .header("x-mesh-pack", pack).header("x-mesh-pack-version", packVersion).header("content-type", contentType).timeout(Duration.ofSeconds(20)).build();
+                .header("x-mesh-pack", pack).header("x-mesh-pack-version", packVersion).header("x-mesh-client", String.valueOf(PROTOCOL)).header("content-type", contentType).timeout(Duration.ofSeconds(20)).build();
         HttpResponse<byte[]> r;
         int limited = 0;
         while (true) {

@@ -32,7 +32,7 @@ public final class HostSigner {
 
     private HttpResponse<String> call(String method, String path, String body) throws IOException {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(base + path)).header("authorization", "Bearer " + token)
-                .header("x-mesh-pack", GatewayClient.pack).timeout(Duration.ofSeconds(20));
+                .header("x-mesh-pack", GatewayClient.pack).header("x-mesh-client", String.valueOf(GatewayClient.PROTOCOL)).timeout(Duration.ofSeconds(20));
         if (body == null) {
             b.GET();
         } else {
