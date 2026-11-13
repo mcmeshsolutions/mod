@@ -17,6 +17,11 @@ public final class MeshEvents {
     private MeshEvents() { }
 
     @SubscribeEvent
+    public static void compatScan(ServerStartedEvent e) {
+        CompatRegistry.scan();
+    }
+
+    @SubscribeEvent
     public static void started(ServerStartedEvent e) {
         MeshService s = MeshBoot.held();
         if (s == null) {
