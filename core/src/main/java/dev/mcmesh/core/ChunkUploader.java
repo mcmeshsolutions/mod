@@ -55,6 +55,13 @@ public final class ChunkUploader {
         return pending.size();
     }
 
+    private volatile long lastBarrierSeq = -1;
+
+    /** Seq of the last barrier the gateway acknowledged, -1 when none was sent. */
+    public long lastBarrierSeq() {
+        return lastBarrierSeq;
+    }
+
     /** Uploads everything recorded so far and, when barrier is set, seals it so a commit can include it. */
     public void flush(boolean barrier) throws IOException, GatewayException {
         synchronized (flushLock) {
@@ -144,6 +151,9 @@ public final class ChunkUploader {
                 frames.add(chain.next("barrier", "", 0, 0, null));
             }
             gw.walAppend(lease.id(), lease.epoch(), frames);
+            if (barrier) {
+                lastBarrierSeq = frames.get(frames.size() - 1).seq();
+            }
         } catch (IOException | GatewayException | RuntimeException ex) {
             chain.restore(before);
             throw ex;

@@ -68,6 +68,18 @@ public final class IdentityKey {
         return Arrays.copyOfRange(enc, enc.length - 32, enc.length);
     }
 
+    /** Signs bytes as given: callers carry their own domain prefix. */
+    public byte[] signRaw(byte[] msg) {
+        try {
+            Signature s = Signature.getInstance("Ed25519");
+            s.initSign(pair.getPrivate());
+            s.update(msg);
+            return s.sign();
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     public byte[] sign(String challenge) {
         try {
             Signature s = Signature.getInstance("Ed25519");

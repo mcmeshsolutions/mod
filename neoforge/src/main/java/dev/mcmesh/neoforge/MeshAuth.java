@@ -28,6 +28,10 @@ public final class MeshAuth {
         return cached;
     }
 
+    public static Path keyFile() {
+        return FMLPaths.CONFIGDIR.get().resolve("mcmesh-identity.key");
+    }
+
     public static Identity login() throws Exception {
         String mode = MeshConfig.AUTH_MODE.get();
         GatewayClient anon = new GatewayClient(MeshConfig.API_URL.get(), "");
@@ -57,8 +61,7 @@ public final class MeshAuth {
                 LOG.info("Mojang login unavailable ({}), using local key", e.toString());
             }
         }
-        Path file = FMLPaths.CONFIGDIR.get().resolve("mcmesh-identity.key");
-        Identity id = anon.loginKey(IdentityKey.loadOrCreate(file), name);
+        Identity id = anon.loginKey(IdentityKey.loadOrCreate(keyFile()), name);
         LOG.info("mesh login via key as {}", id.name());
         return id;
     }

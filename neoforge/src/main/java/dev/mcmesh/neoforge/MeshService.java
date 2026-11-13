@@ -4,6 +4,8 @@ import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import dev.mcmesh.core.ChunkUploader;
 import dev.mcmesh.core.GatewayClient;
+import dev.mcmesh.core.HostSigner;
+import dev.mcmesh.core.IdentityKey;
 import dev.mcmesh.core.JoinResult;
 import dev.mcmesh.core.Lease;
 import dev.mcmesh.core.LeaseSession;
@@ -28,6 +30,7 @@ public final class MeshService {
     private java.nio.file.Path worldRoot;
     private String owner;
     private String worldId;
+    private volatile HostSigner signer;
 
     public String worldId() {
         return worldId;
@@ -130,6 +133,7 @@ public final class MeshService {
         s.worldRoot = worldRoot;
         s.owner = owner;
         s.worldId = world;
+        s.signer = startSigner(token);
         s.session.start();
         // a quit that skips the normal server stop (SIGTERM, System.exit) must still hand the world back instead of leaving guests waiting for lease expiry
         s.exitHook = new Thread(s::shutdown, "mesh-exit");
@@ -149,11 +153,31 @@ public final class MeshService {
         return s;
     }
 
+    private dev.mcmesh.core.Revision commit(String kind, boolean last) throws Exception {
+        HostSigner sig = signer;
+        if (sig == null) {
+            return gw.commit(lease.id(), lease.epoch(), baseRev, kind, last);
+        }
+        return sig.commit(worldId, lease.id(), lease.epoch(), baseRev, kind, last, uploader::lastBarrierSeq, () -> uploader.flush(true));
+    }
+
+    /** Null when the key cannot be read: hosting goes on with unsigned commits. */
+    private static HostSigner startSigner(String token) {
+        try {
+            HostSigner h = new HostSigner(MeshConfig.API_URL.get(), token, IdentityKey.loadOrCreate(MeshAuth.keyFile()));
+            LOG.info(h.register() ? "device key registered, commits are signed" : "device key not registered, commits are unsigned");
+            return h;
+        } catch (Exception e) {
+            LOG.warn("device key unavailable, commits are unsigned: {}", e.toString());
+            return null;
+        }
+    }
+
     private void seed() throws Exception {
         WorldSeeder.seed(worldRoot, uploader, owner);
         aux.scan(worldRoot, uploader);
         uploader.flush(true);
-        baseRev = gw.commit(lease.id(), lease.epoch(), baseRev, "AUTOSAVE", false).id();
+        baseRev = commit("AUTOSAVE", false).id();
         mark(baseRev);
     }
 
@@ -229,7 +253,7 @@ public final class MeshService {
         }
         aux.scan(worldRoot, uploader);
         uploader.flush(true);
-        baseRev = gw.commit(lease.id(), lease.epoch(), baseRev, "AUTOSAVE", false).id();
+        baseRev = commit("AUTOSAVE", false).id();
         mark(baseRev);
         lastSaveAt = System.currentTimeMillis();
     }
@@ -274,7 +298,7 @@ public final class MeshService {
             if (!fenced) {
                 aux.scan(worldRoot, uploader);
                 uploader.flush(true);
-                mark(gw.commit(lease.id(), lease.epoch(), baseRev, "SHUTDOWN", true).id());
+                mark(commit("SHUTDOWN", true).id());
             }
         } catch (Exception e) {
             LOG.error("final commit failed", e);
