@@ -44,7 +44,7 @@ public final class MeshConfig {
                 .defineListAllowEmpty("channels", java.util.List.of(), () -> "0", o -> o instanceof String s && s.matches("\\d{1,5}"));
         AUTH_MODE = b.comment("auto (Mojang then key), mojang, or key").define("authMode", "auto");
         PLAYER_NAME = b.comment("name to claim on a dedicated server, where there is no launcher session").define("playerName", "");
-        SHIP_LOGS = b.comment("send latest.log to the gateway operator once logged in, for debugging").define("shipLogs", true);
+        SHIP_LOGS = b.comment("send latest.log to the gateway operator once logged in, for debugging, off by default because logs can contain private details").define("shipLogs", false);
         PUBLIC_HOST = b.comment("address players type to reach the gateway; tickets are attached only when connecting to it").define("publicHost", "play.23012006.xyz");
         DISCORD_APP = b.comment("Discord application id for rich presence; empty disables it").define("discordAppId", "");
         MODPACK_URL = b.comment("direct link to a Prism instance export (.zip); empty hides the modpack updater").define("modpackUrl", "");
