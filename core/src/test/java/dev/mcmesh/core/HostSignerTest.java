@@ -25,6 +25,7 @@ class HostSignerTest {
     private volatile int keyStatus = 200;
     private volatile String commitError;
     private volatile int commitErrorsLeft;
+    private volatile int commitStatus = 403;
 
     private String base() {
         return "http://127.0.0.1:" + srv.getAddress().getPort();
@@ -54,7 +55,7 @@ class HostSignerTest {
         srv.createContext("/v1/leases/L1/commit", ex -> {
             commits.add(JsonParser.parseString(new String(ex.getRequestBody().readAllBytes())).getAsJsonObject());
             if (commitError != null && commitErrorsLeft-- > 0) {
-                reply(ex, 403, "{\"error\":\"" + commitError + "\"}");
+                reply(ex, commitStatus, "{\"error\":\"" + commitError + "\"}");
             } else {
                 reply(ex, 200, "{\"rev_id\":\"r1\",\"parent\":\"r0\",\"seq\":1}");
             }
@@ -143,6 +144,24 @@ class HostSignerTest {
         } catch (GatewayException e) {
             assertTrue(e.leaseLost());
         }
+        assertEquals(1, commits.size());
+    }
+
+    @Test
+    void sanityRefusalOnASignedCommitTripsTheLatchOnceAndIsNeverResentUnsigned() throws Exception {
+        HostSigner h = new HostSigner(base(), "t", IdentityKey.generate());
+        h.register();
+        commitError = "REJECTED_BY_SANITY_GATE";
+        commitStatus = 422;
+        commitErrorsLeft = 5;
+        GatewayClient gw = new GatewayClient(base(), "t");
+        Commits latch = new Commits(gw, new Lease("L1", 7, 30, 5, 20, "r0", new byte[32]));
+        latch.sendWith((base, kind, last) -> h.commit("w", "L1", 7, base, kind, last, () -> 0, () -> { }));
+        assertNull(latch.commit("r0", "AUTOSAVE", false));
+        assertTrue(latch.refused());
+        assertEquals(1, commits.size());
+        assertTrue(commits.get(0).has("sig"));
+        assertNull(latch.commit("r0", "AUTOSAVE", false));
         assertEquals(1, commits.size());
     }
 }
