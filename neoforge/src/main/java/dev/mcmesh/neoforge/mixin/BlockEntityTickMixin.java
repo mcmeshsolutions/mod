@@ -26,7 +26,8 @@ public abstract class BlockEntityTickMixin {
         try {
             original.call();
         } catch (Throwable t) {
-            Quarantine.freeze(this, "block entity " + blockEntity.getType() + " at " + blockEntity.getBlockPos(), t);
+            Quarantine.freeze(this, "block entity " + blockEntity.getType() + " at " + blockEntity.getBlockPos(), t, blockEntity.getLevel(),
+                    () -> blockEntity.saveWithFullMetadata(blockEntity.getLevel().registryAccess()));
         }
     }
 }
