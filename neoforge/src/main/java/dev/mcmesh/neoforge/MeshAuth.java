@@ -2,6 +2,7 @@ package dev.mcmesh.neoforge;
 
 import com.mojang.logging.LogUtils;
 import dev.mcmesh.core.GatewayClient;
+import dev.mcmesh.core.HostSigner;
 import dev.mcmesh.core.Identity;
 import dev.mcmesh.core.IdentityKey;
 import java.nio.file.Path;
@@ -24,8 +25,22 @@ public final class MeshAuth {
     public static synchronized Identity cached() throws Exception {
         if (cached == null) {
             cached = login();
+            registerKeyInBackground(cached.token());
         }
         return cached;
+    }
+
+    /** Keys the device right after login so a world that requires signed commits never meets an unregistered host. */
+    private static void registerKeyInBackground(String token) {
+        Thread t = new Thread(() -> {
+            try {
+                new HostSigner(MeshConfig.API_URL.get(), token, IdentityKey.loadOrCreate(keyFile())).register();
+            } catch (Exception e) {
+                LOG.debug("device key registration at login skipped: {}", e.toString());
+            }
+        }, "mcmesh-key-register");
+        t.setDaemon(true);
+        t.start();
     }
 
     public static Path keyFile() {
