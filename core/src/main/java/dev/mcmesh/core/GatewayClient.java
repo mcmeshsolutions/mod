@@ -53,6 +53,12 @@ public final class GatewayClient {
         exec("/v1/logs", "POST", HttpRequest.BodyPublishers.ofByteArray(text), "text/plain");
     }
 
+    public void crashReport(String world, String text) throws IOException, GatewayException {
+        JsonObject b = new JsonObject();
+        b.addProperty("text", text);
+        post("/v1/worlds/" + world + "/crash-report", b);
+    }
+
     private JsonObject post(String path, JsonObject body) throws IOException, GatewayException {
         byte[] r = exec(path, "POST", HttpRequest.BodyPublishers.ofString(body.toString()), "application/json");
         return JsonParser.parseString(new String(r)).getAsJsonObject();

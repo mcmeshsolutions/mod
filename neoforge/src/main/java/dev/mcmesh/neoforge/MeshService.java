@@ -237,6 +237,31 @@ public final class MeshService {
         Thread.ofVirtual().name("mesh-tunnel").start(this::keepTunnel);
         gw.hostReady(lease.id(), lease.epoch());
         current = this;
+        Thread.ofVirtual().name("mesh-crash-report").start(this::reportPreviousCrash);
+    }
+
+    private java.nio.file.Path crashMarker() {
+        return net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get().resolve("mcmesh-running-" + worldId + ".marker");
+    }
+
+    /** If the last hosting run of this world died without a clean stop, sends its crash report to the gateway. Best effort. */
+    private void reportPreviousCrash() {
+        try {
+            long previous = dev.mcmesh.core.CrashMarker.begin(crashMarker(), System.currentTimeMillis());
+            if (previous < 0) {
+                return;
+            }
+            var report = dev.mcmesh.core.CrashMarker.newestReportSince(
+                    net.neoforged.fml.loading.FMLPaths.GAMEDIR.get().resolve("crash-reports"), previous);
+            if (report == null) {
+                LOG.warn("the last hosting run of {} did not stop cleanly, no crash report found", worldId);
+                return;
+            }
+            gw.crashReport(worldId, dev.mcmesh.core.CrashMarker.head(report, 60_000));
+            LOG.warn("the last hosting run of {} crashed, report {} sent to the gateway", worldId, report.getFileName());
+        } catch (Exception e) {
+            LOG.debug("crash report not sent: {}", e.toString());
+        }
     }
 
     private void probeProof() {
@@ -341,6 +366,7 @@ public final class MeshService {
         } catch (Exception e) {
             LOG.error("final commit failed", e);
         } finally {
+            dev.mcmesh.core.CrashMarker.end(crashMarker());
             session.close();
             tunnel.close();
             current = null;
