@@ -27,15 +27,34 @@ public final class GatewayClient {
         this.token = token;
     }
 
+    private static final int RATE_LIMIT_RETRIES = 3;
+
+    private static long retryAfterMs(HttpResponse<byte[]> r) {
+        try {
+            return Math.min(5, Math.max(0, Long.parseLong(r.headers().firstValue("retry-after").orElse("1").trim()))) * 1000;
+        } catch (NumberFormatException e) {
+            return 1000;
+        }
+    }
+
     private byte[] exec(String path, String method, HttpRequest.BodyPublisher body, String contentType) throws IOException, GatewayException {
         HttpRequest req = HttpRequest.newBuilder(URI.create(base + path)).method(method, body).header("authorization", "Bearer " + token)
                 .header("x-mesh-pack", pack).header("x-mesh-pack-version", packVersion).header("content-type", contentType).timeout(Duration.ofSeconds(20)).build();
         HttpResponse<byte[]> r;
-        try {
-            r = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("interrupted", e);
+        int limited = 0;
+        while (true) {
+            try {
+                r = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
+                // a 429 is refused before any handler runs, so resending is always safe
+                if (r.statusCode() == 429 && limited++ < RATE_LIMIT_RETRIES) {
+                    Thread.sleep(retryAfterMs(r));
+                    continue;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("interrupted", e);
+            }
+            break;
         }
         if (r.statusCode() / 100 != 2) {
             String code = "HTTP_" + r.statusCode();
