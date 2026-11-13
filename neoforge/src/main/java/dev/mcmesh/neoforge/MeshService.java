@@ -3,6 +3,7 @@ package dev.mcmesh.neoforge;
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import dev.mcmesh.core.ChunkUploader;
+import dev.mcmesh.core.Commits;
 import dev.mcmesh.core.GatewayClient;
 import dev.mcmesh.core.JoinResult;
 import dev.mcmesh.core.Lease;
@@ -21,8 +22,10 @@ public final class MeshService {
     private final LeaseSession session;
     private volatile TunnelAgent tunnel;
     private final ChunkUploader uploader;
+    private final Commits commits;
     private volatile boolean fenced;
     private volatile Runnable fenceAction;
+    private volatile Runnable refusedAction;
     private String baseRev;
     private String token;
     private java.nio.file.Path worldRoot;
@@ -53,6 +56,7 @@ public final class MeshService {
         this.lease = lease;
         this.baseRev = lease.baseRev();
         this.uploader = new ChunkUploader(gw, lease);
+        this.commits = new Commits(gw, lease);
         this.tunnel = newTunnel();
         this.session = LeaseSession.over(gw, lease, why -> {
             fenced = true;
@@ -94,6 +98,43 @@ public final class MeshService {
 
     public boolean fenced() {
         return fenced;
+    }
+
+    /** Runs once when the gateway's sanity gate refuses a save; from then on nothing is uploaded for this lease. */
+    public void onRefused(Runnable action) {
+        refusedAction = action;
+        if (commits.refused()) {
+            action.run();
+        }
+    }
+
+    public boolean refused() {
+        return commits.refused();
+    }
+
+    /** False when the sanity gate refused the commit, now or earlier. */
+    private boolean commit(String kind, boolean last) throws Exception {
+        if (commits.refused()) {
+            return false;
+        }
+        dev.mcmesh.core.Revision r = commits.commit(baseRev, kind, last);
+        if (r != null) {
+            baseRev = r.id();
+            mark(baseRev);
+            return true;
+        }
+        LOG.error("gateway sanity gate refused the {} commit on top of {}; uploads stop, the world in {} is kept", kind, baseRev, worldRoot);
+        try {
+            // without this the next host run on this machine would load the refused state as if it were baseRev
+            dev.mcmesh.core.RejectedCopy.mark(worldRoot, baseRev);
+        } catch (java.io.IOException e) {
+            LOG.error("could not mark the refused world", e);
+        }
+        Runnable a = refusedAction;
+        if (a != null) {
+            a.run();
+        }
+        return false;
     }
 
     public String describe() {
@@ -224,14 +265,14 @@ public final class MeshService {
 
     /** Seals pending chunks and commits them as a revision. */
     public synchronized void autosave() throws Exception {
-        if (fenced) {
+        if (fenced || commits.refused()) {
             return;
         }
         aux.scan(worldRoot, uploader);
         uploader.flush(true);
-        baseRev = gw.commit(lease.id(), lease.epoch(), baseRev, "AUTOSAVE", false).id();
-        mark(baseRev);
-        lastSaveAt = System.currentTimeMillis();
+        if (commit("AUTOSAVE", false)) {
+            lastSaveAt = System.currentTimeMillis();
+        }
     }
 
     /** Autosave out of schedule, at most once a minute. Returns false when throttled. */
@@ -248,7 +289,8 @@ public final class MeshService {
     public String status() {
         long age = lastSaveAt == 0 ? -1 : (System.currentTimeMillis() - lastSaveAt) / 1000;
         return "world " + worldId + ", " + describe() + ", tunnel " + (tunnelUp ? "up" : "DOWN")
-                + ", last upload " + (age < 0 ? "none yet" : age + " s ago") + ", base " + baseRev;
+                + ", last upload " + (age < 0 ? "none yet" : age + " s ago") + ", base " + baseRev
+                + (commits.refused() ? ", UPLOADS STOPPED: the gateway refused the last save" : "");
     }
 
     private void mark(String rev) {
@@ -271,10 +313,10 @@ public final class MeshService {
             } catch (IllegalStateException ignored) { }
         }
         try {
-            if (!fenced) {
+            if (!fenced && !commits.refused()) {
                 aux.scan(worldRoot, uploader);
                 uploader.flush(true);
-                mark(gw.commit(lease.id(), lease.epoch(), baseRev, "SHUTDOWN", true).id());
+                commit("SHUTDOWN", true);
             }
         } catch (Exception e) {
             LOG.error("final commit failed", e);

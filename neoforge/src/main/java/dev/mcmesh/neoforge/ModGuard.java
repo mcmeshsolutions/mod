@@ -1,19 +1,20 @@
 package dev.mcmesh.neoforge;
 
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import dev.mcmesh.core.GatewayClient;
+import dev.mcmesh.core.ModRules;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import net.neoforged.fml.ModList;
+import net.neoforged.fml.loading.FMLPaths;
 
-/** Hosting is refused when the loaded mods differ from the world's allowlist, so saves stay readable by every host. */
+/** Hosting is refused when the loaded mods differ from the world's allowlist, or the pack's when the world has none, so saves stay readable by every host. */
 public final class ModGuard {
     private static final Set<String> BUILTIN = Set.of("minecraft", "neoforge", "mcmesh");
     private static Map<String, String> loaded;
@@ -29,51 +30,37 @@ public final class ModGuard {
     public static boolean allowed(GatewayClient gw, String world) {
         problem = null;
         offending = java.util.List.of();
-        JsonObject doc;
+        JsonObject doc = null;
         try {
             doc = gw.worldMods(world);
         } catch (Exception e) {
-            return true;
+            // gateway without the mods route, or unreachable: the pack rules still apply
         }
-        JsonArray allow = doc.has("allow") ? doc.getAsJsonArray("allow") : new JsonArray();
-        if (allow.isEmpty()) {
-            return true;
-        }
-        Set<String> ignore = new HashSet<>(BUILTIN);
-        if (doc.has("ignore")) {
-            for (JsonElement e : doc.getAsJsonArray("ignore")) {
-                ignore.add(e.getAsString());
-            }
-        }
-        Map<String, String> have = loaded();
-        Set<String> wanted = new HashSet<>();
-        java.util.List<String[]> off = new java.util.ArrayList<>();
-        for (JsonElement e : allow) {
-            JsonObject a = e.getAsJsonObject();
-            String id = a.get("id").getAsString();
-            wanted.add(id);
-            if (ignore.contains(id)) {
-                continue;
-            }
-            String h = have.get(id);
-            if (h == null) {
-                problem = problem == null ? "Missing mod: " + id : problem;
-            } else if (a.has("hash") && !a.get("hash").getAsString().isEmpty() && !a.get("hash").getAsString().equalsIgnoreCase(h)) {
-                problem = problem == null ? "Different version of mod: " + id : problem;
-                off.add(new String[] {id, h});
-            }
-        }
-        for (Map.Entry<String, String> en : have.entrySet()) {
-            if (!wanted.contains(en.getKey()) && !ignore.contains(en.getKey())) {
-                problem = problem == null ? "Extra mod not allowed by this world: " + en.getKey() : problem;
-                off.add(new String[] {en.getKey(), en.getValue()});
-            }
-        }
-        offending = off;
-        if (problem != null) {
+        JsonObject pack;
+        try {
+            pack = packRules();
+        } catch (Exception e) {
+            // an unreadable pack file must not quietly lift the restriction it was meant to carry
+            problem = "Pack config mcmesh-allowlist.json is unreadable";
             return false;
         }
-        return true;
+        ModRules.Result r = ModRules.check(ModRules.effective(doc, pack), loaded(), BUILTIN);
+        offending = r.offending();
+        problem = r.problem();
+        return problem == null;
+    }
+
+    /** The pack author's allowlist: the whole config/mcmesh-allowlist.json. Null when the pack ships none. */
+    static JsonObject packRules() throws java.io.IOException {
+        Path f = FMLPaths.CONFIGDIR.get().resolve("mcmesh-allowlist.json");
+        if (!Files.isRegularFile(f)) {
+            return null;
+        }
+        try {
+            return JsonParser.parseString(Files.readString(f)).getAsJsonObject();
+        } catch (RuntimeException e) {
+            throw new java.io.IOException(e);
+        }
     }
 
     /** Allowlist document built from the mods this instance has loaded. */
