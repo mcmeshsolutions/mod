@@ -42,6 +42,16 @@ public final class PackSwap {
         return null;
     }
 
+    /** True when an existing parent directory of the target resolves outside its mods/ or config/ root. */
+    static boolean escapesBySymlink(Path game, String p) throws IOException {
+        Path root = game.resolve(p.substring(0, p.indexOf('/')));
+        Path parent = game.resolve(p).getParent();
+        while (parent != null && !Files.exists(parent, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            parent = parent.getParent();
+        }
+        return parent != null && Files.exists(root) && !parent.toRealPath().startsWith(root.toRealPath());
+    }
+
     static String versionOk(String v) {
         return v != null && v.matches("\\d{1,9}(\\.\\d{1,9})*") ? null : "bad version";
     }
@@ -90,6 +100,16 @@ public final class PackSwap {
         for (String p : rm) {
             if (badPath(game, p) != null) {
                 throw new IOException("unsafe path: " + p);
+            }
+        }
+        for (String p : put) {
+            if (escapesBySymlink(game, p)) {
+                throw new IOException("symlink escape: " + p);
+            }
+        }
+        for (String p : rm) {
+            if (escapesBySymlink(game, p)) {
+                throw new IOException("symlink escape: " + p);
             }
         }
         Path backup = upd.resolve("backup").resolve(version);
