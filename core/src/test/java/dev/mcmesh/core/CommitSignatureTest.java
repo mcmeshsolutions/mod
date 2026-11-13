@@ -69,4 +69,25 @@ class CommitSignatureTest {
         assertThrows(Exception.class, () -> IdentityKey.loadOrCreate(f));
         assertEquals("garbage\n", Files.readString(f));
     }
+
+    private static String hex(byte[] b) {
+        StringBuilder o = new StringBuilder();
+        for (byte x : b) {
+            o.append(String.format("%02x", x));
+        }
+        return o.toString();
+    }
+
+    /** The same reference vectors gatewayd's devsig tests assert, computed independently in Python. */
+    @Test
+    void byteLayoutsMatchTheGatewayReferenceVectors() {
+        assertEquals("6d636d6573682d636f6d6d69742d763100000000027731000000024c310000000000000007000000027230000000084155544f53415645000000000000000005",
+                hex(CommitSignature.commitMessage("w1", "L1", 7, "r0", "AUTOSAVE", false, 5)));
+        assertEquals("6d636d6573682d636f6d6d69742d763100000000027731000000024c3100000000000000070000000272300000000853485554444f574e01ffffffffffffffff",
+                hex(CommitSignature.commitMessage("w1", "L1", 7, "r0", "SHUTDOWN", true, -1)));
+        byte[] key = new byte[32];
+        java.util.Arrays.fill(key, (byte) 7);
+        assertEquals("6d636d6573682d6465766b65792d763100000000056465762d310707070707070707070707070707070707070707070707070707070707070707",
+                hex(CommitSignature.deviceKeyMessage("dev-1", key)));
+    }
 }
