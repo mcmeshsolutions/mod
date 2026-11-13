@@ -64,5 +64,13 @@ public final class MeshConfig {
         return net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get().resolve("mcmesh-trusted-gateways.txt");
     }
 
+    /** Configured pack version, or the one the last applied auto-update installed when that is newer. */
+    public static String packVersion() {
+        String cfg = PACK_VERSION.get();
+        String applied = dev.mcmesh.core.PackSwap.appliedVersion(net.neoforged.fml.loading.FMLPaths.GAMEDIR.get());
+        return applied != null && dev.mcmesh.core.PackCheck.valid(applied) && dev.mcmesh.core.PackCheck.valid(cfg)
+                && dev.mcmesh.core.PackCheck.compare(applied, cfg) > 0 ? applied : cfg;
+    }
+
     private MeshConfig() { }
 }

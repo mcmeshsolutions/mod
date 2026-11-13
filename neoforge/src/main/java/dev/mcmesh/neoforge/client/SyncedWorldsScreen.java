@@ -197,7 +197,7 @@ public final class SyncedWorldsScreen extends Screen {
             return;
         }
         GatewayClient.WorldInfo w = sel.w;
-        String differs = dev.mcmesh.core.PackCheck.warning(MeshConfig.PACK_VERSION.get(), w.packVersion());
+        String differs = dev.mcmesh.core.PackCheck.warning(MeshConfig.packVersion(), w.packVersion());
         if (differs != null && !w.id().equals(warnedWorld)) {
             warnedWorld = w.id();
             message = differs + " Press the button again to continue anyway.";
