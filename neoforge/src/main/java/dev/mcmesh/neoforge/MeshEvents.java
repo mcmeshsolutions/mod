@@ -100,8 +100,12 @@ public final class MeshEvents {
         if (e.getServer().getTickCount() % 20 != 0) {
             return;
         }
-        if (MeshService.current() != null) {
+        MeshService hosting = MeshService.current();
+        if (hosting != null) {
             LoadShed.sample(e.getServer());
+            if (e.getServer().getTickCount() % 600 == 0) {
+                HandoverWatch.check(e.getServer(), hosting);
+            }
         } else {
             LoadShed.restore(e.getServer());
         }

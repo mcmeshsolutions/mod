@@ -98,6 +98,11 @@ public final class MeshService {
         handoffAction = action;
     }
 
+    /** The host machine itself gives the world away; shutdown then follows the same path as a gateway-requested handover. */
+    public void markHandedOff() {
+        handedOff = true;
+    }
+
     public boolean fenced() {
         return fenced;
     }
