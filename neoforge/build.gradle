@@ -15,6 +15,8 @@ neoForge {
         client { client() }
         server {
             server()
+            // without nogui the dedicated server opens its Swing monitor window, so no script here is really headless (F-037)
+            programArguments.add('nogui')
             gameDirectory = layout.projectDirectory.dir(providers.gradleProperty('mcmeshRunDir').getOrElse('run'))
         }
     }
