@@ -50,6 +50,9 @@ final class WorldSync {
         }
         Path marker = root.resolve(MARKER);
         String have = Files.exists(marker) ? Files.readString(marker).trim() : null;
+        if (have != null && !LazyWorld.savedPending(root).isEmpty()) {
+            LazyWorld.completeFromState(gw, root, gw.listRevision(have));
+        }
         if (rev.equals(have)) {
             return false;
         }
@@ -71,6 +74,7 @@ final class WorldSync {
             incremental = tryIncremental(gw, root, have, rev);
         }
         if (!incremental) {
+            LazyWorld.clearState(root);
             if (!terrainOnlyHere) {
                 wipeChunkStores(root);
             }
@@ -78,8 +82,12 @@ final class WorldSync {
             Sink sink = new Sink(root);
             try {
                 SyncProgress.begin();
-                int n = WorldDownloader.download(gw, rev, sink, SyncProgress::update);
-                LOG.info("downloaded {} files for {}", n, rev);
+                if (MeshConfig.LAZY_BOOTSTRAP.get() && files.chunks().size() >= MeshConfig.LAZY_MIN_CHUNKS.get()) {
+                    lazyDownload(gw, root, rev, files, sink, marker);
+                } else {
+                    int n = WorldDownloader.download(gw, rev, sink, SyncProgress::update);
+                    LOG.info("downloaded {} files for {}", n, rev);
+                }
             } finally {
                 sink.close();
                 SyncProgress.end();
@@ -94,6 +102,24 @@ final class WorldSync {
         }
         Files.writeString(marker, rev, StandardCharsets.UTF_8);
         return false;
+    }
+
+    /** Extra files first (the anchors come from level.dat and playerdata), then the regions near them; the rest is handed to LazyWorld. */
+    private static void lazyDownload(GatewayClient gw, Path root, String rev, RevisionFiles files, Sink sink, Path marker) throws Exception {
+        WorldDownloader.downloadParts(gw, List.of(), files.aux(), sink, SyncProgress::update);
+        var anchors = LazyWorld.anchors(root);
+        var eager = dev.mcmesh.core.LazyPlan.eagerRegions(files.chunks(), anchors, MeshConfig.LAZY_RADIUS_REGIONS.get(), MeshConfig.LAZY_SMALL_DIM_CHUNKS.get());
+        var split = dev.mcmesh.core.LazyPlan.split(files.chunks(), eager);
+        int n = WorldDownloader.downloadParts(gw, split.eager(), List.of(), sink, SyncProgress::update);
+        LOG.info("lazy bootstrap: {} anchors, {} chunks downloaded now, {} regions left for later", anchors.size(), n, split.pending().size());
+        sink.close();
+        if (split.pending().isEmpty()) {
+            return;
+        }
+        LazyWorld w = LazyWorld.begin(gw, root, split.pending(), (int) (System.currentTimeMillis() / 1000) - 3600);
+        // the marker must exist before the world opens, or a restart would call this folder unmanaged
+        Files.writeString(marker, rev, StandardCharsets.UTF_8);
+        w.startDrain();
     }
 
     /**
@@ -150,7 +176,7 @@ final class WorldSync {
         }
     }
 
-    private static final class Sink implements WorldDownloader.Sink {
+    static final class Sink implements WorldDownloader.Sink {
         private final Path root;
         private final Map<String, RegionFile> files = new HashMap<>();
 
@@ -219,6 +245,7 @@ final class WorldSync {
                     first = first == null ? e : first;
                 }
             }
+            files.clear();
             if (first != null) {
                 throw first;
             }

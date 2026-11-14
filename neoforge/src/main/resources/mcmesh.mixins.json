@@ -6,6 +6,7 @@
   "mixins": [
     "ClientIntentionMixin",
     "RegionFileStorageMixin",
+    "RegionGuardMixin",
     "ServerMainMixin",
     "MinecraftServerMixin",
     "PlayerListMixin",

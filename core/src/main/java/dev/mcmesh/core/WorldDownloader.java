@@ -91,6 +91,11 @@ public final class WorldDownloader {
         return fetchAll(gw, files.chunks(), files.aux(), sink, progress);
     }
 
+    /** Fetches an explicit subset of a listing, for callers that decide themselves what is needed now. */
+    public static int downloadParts(GatewayClient gw, List<RevisionFiles.Chunk> chunks, List<RevisionFiles.Aux> aux, Sink sink, Progress progress) throws IOException, GatewayException {
+        return fetchAll(gw, chunks, aux, sink, progress);
+    }
+
     private static int fetchAll(GatewayClient gw, List<RevisionFiles.Chunk> chunks, List<RevisionFiles.Aux> aux, Sink sink, Progress progress) throws IOException, GatewayException {
         ExecutorService pool = Executors.newFixedThreadPool(THREADS);
         try {

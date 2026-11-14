@@ -19,6 +19,10 @@ public final class MeshConfig {
     public static final ModConfigSpec.IntValue AUTOSAVE_SECONDS;
     public static final ModConfigSpec.IntValue STREAM_SECONDS;
     public static final ModConfigSpec.BooleanValue ANCHOR_STANDBY;
+    public static final ModConfigSpec.BooleanValue LAZY_BOOTSTRAP;
+    public static final ModConfigSpec.IntValue LAZY_MIN_CHUNKS;
+    public static final ModConfigSpec.IntValue LAZY_RADIUS_REGIONS;
+    public static final ModConfigSpec.IntValue LAZY_SMALL_DIM_CHUNKS;
     public static final ModConfigSpec.ConfigValue<String> AUTH_MODE;
     public static final ModConfigSpec.ConfigValue<String> PLAYER_NAME;
     public static final ModConfigSpec.ConfigValue<String> PACK_ID;
@@ -52,6 +56,10 @@ public final class MeshConfig {
         PLAYER_NAME = b.comment("name to claim on a dedicated server, where there is no launcher session").define("playerName", "");
         SHIP_LOGS = b.comment("send latest.log to the gateway operator once logged in, for debugging, off by default because logs can contain private details").define("shipLogs", false);
         ANCHOR_STANDBY = b.comment("dedicated server only: when another machine is hosting the world, wait for it to become free instead of refusing to start (anchor node, restart it with systemd)").define("anchorStandby", false);
+        LAZY_BOOTSTRAP = b.comment("on a full download, start the world once the regions near spawn and the players are on disk and fetch the rest in the background or when the game first needs it. Off by default").define("lazyBootstrap", false);
+        LAZY_MIN_CHUNKS = b.comment("lazy bootstrap only applies to worlds with at least this many stored chunk entries (region, entities and poi count separately)").defineInRange("lazyMinChunks", 20000, 1, Integer.MAX_VALUE);
+        LAZY_RADIUS_REGIONS = b.comment("regions (512 blocks) around spawn and each player that are downloaded before the world opens").defineInRange("lazyRadiusRegions", 2, 0, 16);
+        LAZY_SMALL_DIM_CHUNKS = b.comment("a dimension with no spawn or player in it and at most this many entries is downloaded whole before the world opens").defineInRange("lazySmallDimChunks", 4096, 0, Integer.MAX_VALUE);
         SHOW_HOST_HEALTH = b.comment("show a small line in the corner of the screen about how well the host machine is doing").define("showHostHealth", true);
         AUTOSAVE_SECONDS = b.comment("seconds between uploads of the world to the gateway while hosting; a crash loses at most this much play, a smaller number uploads more often").defineInRange("autosaveSeconds", 120, 20, 3600);
         STREAM_SECONDS = b.comment("0 turns streaming off. Otherwise every this many seconds the changes since the last upload are sent to the gateway without making a revision, so a crash or a power cut loses at most this much play; the gateway recovers them from its write-ahead log. Costs a little disk and network on the host").defineInRange("streamSeconds", 0, 0, 120);
