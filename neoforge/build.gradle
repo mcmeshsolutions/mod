@@ -13,7 +13,10 @@ neoForge {
     version = '21.1.266'
     runs {
         client { client() }
-        server { server() }
+        server {
+            server()
+            gameDirectory = layout.projectDirectory.dir(providers.gradleProperty('mcmeshRunDir').getOrElse('run'))
+        }
     }
     mods {
         mcmesh {
