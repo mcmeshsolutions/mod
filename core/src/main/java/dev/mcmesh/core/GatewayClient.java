@@ -291,6 +291,11 @@ public final class GatewayClient {
 
     /** takeover is true only for an explicit request to replace a healthy host. */
     public JoinResult join(String world, int tier, double score, boolean wantsHost, JsonObject bench, boolean takeover) throws IOException, GatewayException {
+        return join(world, tier, score, wantsHost, bench, takeover, false);
+    }
+
+    /** fresh is true when this process has just started and holds no lease state, so a lease its device still holds on the gateway is stale. */
+    public JoinResult join(String world, int tier, double score, boolean wantsHost, JsonObject bench, boolean takeover, boolean fresh) throws IOException, GatewayException {
         JsonObject hw = new JsonObject();
         if (bench != null) {
             hw.add("bench", bench);
@@ -301,6 +306,9 @@ public final class GatewayClient {
         hw.addProperty("takeover", takeover);
         JsonObject body = new JsonObject();
         body.add("hw", hw);
+        if (fresh) {
+            body.addProperty("fresh", true);
+        }
         JsonObject r = post("/v1/worlds/" + world + "/join", body);
         return switch (r.get("decision").getAsString()) {
             case "HOST" -> {

@@ -177,7 +177,7 @@ public final class MeshService {
     public static MeshService join(java.nio.file.Path worldRoot, String world, String token, String owner, int tier, double score, boolean takeover) throws Exception {
         GatewayClient gw = new GatewayClient(MeshConfig.API_URL.get(), token);
         JsonObject bench = HostBench.get();
-        JoinResult r = gw.join(world, tier, bench.get("cpu").getAsDouble(), ModGuard.allowed(gw, world), bench, takeover);
+        JoinResult r = gw.join(world, tier, bench.get("cpu").getAsDouble(), ModGuard.allowed(gw, world), bench, takeover, true);
         if (!(r instanceof JoinResult.Host h)) {
             LOG.debug("not host: {}", r);
             return null;
