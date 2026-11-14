@@ -54,4 +54,14 @@ class RejectedCopyTest {
         assertTrue(Files.isDirectory(a));
         assertTrue(Files.isDirectory(b));
     }
+
+    @Test
+    void theReasonIsTheMarkerTextAndNullWhenNotMarked(@TempDir Path tmp) throws Exception {
+        Path root = Files.createDirectories(tmp.resolve("w"));
+        assertNull(RejectedCopy.reason(root));
+        RejectedCopy.mark(root, "unclean-stop");
+        assertEquals("unclean-stop", RejectedCopy.reason(root));
+        RejectedCopy.mark(root, "w1:R_0004");
+        assertEquals("w1:R_0004", RejectedCopy.reason(root));
+    }
 }

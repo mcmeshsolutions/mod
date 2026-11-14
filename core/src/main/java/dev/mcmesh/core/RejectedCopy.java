@@ -19,6 +19,15 @@ public final class RejectedCopy {
         Files.writeString(root.resolve(MARKER), baseRev, StandardCharsets.UTF_8);
     }
 
+    /** What the marker says: a base revision after a refused save, or "unclean-stop" after a crash. Null when not marked or unreadable. */
+    public static String reason(Path root) {
+        try {
+            return marked(root) ? Files.readString(root.resolve(MARKER), StandardCharsets.UTF_8).trim() : null;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
     public static boolean marked(Path root) {
         return Files.exists(root.resolve(MARKER));
     }

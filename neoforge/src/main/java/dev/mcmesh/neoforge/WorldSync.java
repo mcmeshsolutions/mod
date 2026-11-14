@@ -42,9 +42,11 @@ final class WorldSync {
      *     should upload them in full on the next save.
      */
     static boolean sync(GatewayClient gw, Path root, String rev, boolean[] keptLocalTerrain) throws Exception {
+        String why = dev.mcmesh.core.RejectedCopy.reason(root);
         Path kept = dev.mcmesh.core.RejectedCopy.setAside(root);
         if (kept != null) {
-            LOG.warn("the gateway refused the last save of this world; that copy is kept in {}", kept);
+            LOG.warn("unclean-stop".equals(why) ? "the last hosting run did not stop cleanly; the local copy is kept in {}"
+                    : "the gateway refused the last save of this world; that copy is kept in {}", kept);
         }
         Path marker = root.resolve(MARKER);
         String have = Files.exists(marker) ? Files.readString(marker).trim() : null;
