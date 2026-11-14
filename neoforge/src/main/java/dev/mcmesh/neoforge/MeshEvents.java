@@ -13,6 +13,8 @@ import org.slf4j.Logger;
 public final class MeshEvents {
     private static final Logger LOG = LogUtils.getLogger();
 
+    private static final dev.mcmesh.core.QuotaNotice QUOTA = new dev.mcmesh.core.QuotaNotice();
+
     private MeshEvents() { }
 
     @SubscribeEvent
@@ -100,7 +102,15 @@ public final class MeshEvents {
                 try {
                     s.autosave();
                 } catch (Exception ex) {
-                    LOG.error("autosave failed", ex);
+                    if (dev.mcmesh.core.QuotaNotice.isQuota(ex)) {
+                        String note = QUOTA.message(ex, System.currentTimeMillis());
+                        if (note != null) {
+                            LOG.warn(note);
+                            e.getServer().execute(() -> e.getServer().getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal(note), false));
+                        }
+                    } else {
+                        LOG.error("autosave failed", ex);
+                    }
                 }
             });
         }
