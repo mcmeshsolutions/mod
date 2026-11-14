@@ -406,6 +406,14 @@ public final class GatewayClient {
         return post("/v1/leases/" + lease + "/unlock", lockBody(epoch, name, owner)).get("released").getAsBoolean();
     }
 
+    /** An operator-flagged anchor tells the gateway how big it is; refused (403) for any other device. */
+    public void registerAnchor(long ramMb, int cores) throws IOException, GatewayException {
+        JsonObject o = new JsonObject();
+        o.addProperty("ram_mb", ramMb);
+        o.addProperty("cores", cores);
+        post("/v1/anchors/register", o);
+    }
+
     public void hostReady(String lease, long epoch) throws IOException, GatewayException {
         post("/v1/leases/" + lease + "/host-ready", epoch(epoch));
     }

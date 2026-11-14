@@ -50,6 +50,9 @@ public final class MeshBoot {
                         : "mesh: another machine holds the host lease for this world, not starting a second writer");
             }
             held = s;
+            if (MeshConfig.ANCHOR_STANDBY.get()) {
+                registerAnchor(s);
+            }
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
@@ -58,6 +61,16 @@ public final class MeshBoot {
     }
 
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger("mcmesh");
+
+    private static void registerAnchor(MeshService s) {
+        try {
+            long ram = ((com.sun.management.OperatingSystemMXBean) java.lang.management.ManagementFactory.getOperatingSystemMXBean()).getTotalMemorySize() >> 20;
+            s.gateway().registerAnchor(ram, Runtime.getRuntime().availableProcessors());
+            LOG.info("anchor registered with the gateway: {} MB, {} cores", ram, Runtime.getRuntime().availableProcessors());
+        } catch (Exception e) {
+            LOG.info("anchor not registered (the operator flags a device with `gatewayd set-anchor`): {}", e.toString());
+        }
+    }
     static final long STANDBY_POLL_MS = 10_000;
 
     /**
