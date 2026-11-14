@@ -161,6 +161,15 @@ public final class MeshEvents {
         });
     }
 
+    /** The server has begun its own stop (saving chunks next); the JVM exit hook must wait for it before the final commit. */
+    @SubscribeEvent
+    public static void stopBegun(net.neoforged.neoforge.event.server.ServerStoppingEvent e) {
+        MeshService s = MeshBoot.held();
+        if (s != null) {
+            s.serverStopping();
+        }
+    }
+
     @SubscribeEvent
     public static void stopping(ServerStoppedEvent e) {
         LoadShed.restore(e.getServer());

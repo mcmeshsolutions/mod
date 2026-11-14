@@ -407,18 +407,40 @@ public final class MeshService {
      * committed from here after the grace period.
      */
     private void shutdownAfterServerStop() {
-        long until = System.currentTimeMillis() + SERVER_STOP_GRACE_MS;
-        while (!closed && System.currentTimeMillis() < until) {
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
+        long begun = System.currentTimeMillis() + STOP_BEGIN_WAIT_MS;
+        while (!closed && !serverStopping && System.currentTimeMillis() < begun) {
+            if (!sleepQuietly(100)) {
+                break;
+            }
+        }
+        // saving a big world takes a minute or more; a commit made halfway would miss the rest, so a stop that has begun is awaited
+        long done = System.currentTimeMillis() + STOP_FINISH_WAIT_MS;
+        while (serverStopping && !closed && System.currentTimeMillis() < done) {
+            if (!sleepQuietly(100)) {
                 break;
             }
         }
         shutdown();
     }
 
-    private static final long SERVER_STOP_GRACE_MS = 45_000;
+    private static boolean sleepQuietly(long ms) {
+        try {
+            Thread.sleep(ms);
+            return true;
+        } catch (InterruptedException e) {
+            return false;
+        }
+    }
+
+    /** The server's own stop has begun; it will reach {@link #shutdown()} itself once the world is saved. */
+    public void serverStopping() {
+        serverStopping = true;
+    }
+
+    private volatile boolean serverStopping;
+    /** A SIGTERM starts the server's stop within moments; if none starts in this time the process is exiting some other way. */
+    private static final long STOP_BEGIN_WAIT_MS = 5_000;
+    private static final long STOP_FINISH_WAIT_MS = 10 * 60_000;
 
     public synchronized void shutdown() {
         if (closed) {
