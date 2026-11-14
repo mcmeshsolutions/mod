@@ -23,10 +23,23 @@ public abstract class BlockEntityTickMixin {
         if (Quarantine.frozen(this)) {
             return;
         }
+        long limit = 0;
+        var rules = dev.mcmesh.neoforge.CompatRegistry.rules();
+        if (rules.hasTickLimits()) {
+            var key = net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(blockEntity.getType());
+            limit = key == null ? 0 : rules.maxTickNanos(key.getNamespace());
+        }
+        long started = limit > 0 ? System.nanoTime() : 0;
         try {
             original.call();
         } catch (Throwable t) {
-            Quarantine.freeze(this, "block entity " + blockEntity.getType() + " at " + blockEntity.getBlockPos(), t, blockEntity.getLevel(),
+            Quarantine.freeze(this, "block entity " + net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(blockEntity.getType()) + " at " + blockEntity.getBlockPos(), t, blockEntity.getLevel(),
+                    () -> blockEntity.saveWithFullMetadata(blockEntity.getLevel().registryAccess()));
+            return;
+        }
+        if (limit > 0 && System.nanoTime() - started > limit) {
+            Quarantine.freeze(this, "block entity " + net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(blockEntity.getType()) + " at " + blockEntity.getBlockPos(),
+                    new IllegalStateException("one tick took " + (System.nanoTime() - started) / 1000 + " us, the mod's compat manifest allows " + limit / 1000), blockEntity.getLevel(),
                     () -> blockEntity.saveWithFullMetadata(blockEntity.getLevel().registryAccess()));
         }
     }

@@ -21,8 +21,18 @@ public abstract class EntityTickMixin {
         if (Quarantine.frozen(entity)) {
             return;
         }
+        long limit = 0;
+        var rules = dev.mcmesh.neoforge.CompatRegistry.rules();
+        if (rules.hasTickLimits()) {
+            var key = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+            limit = key == null ? 0 : rules.maxTickNanos(key.getNamespace());
+        }
+        long started = limit > 0 ? System.nanoTime() : 0;
         try {
             original.call(ticker, entity);
+            if (limit > 0 && System.nanoTime() - started > limit) {
+                throw new IllegalStateException("one tick took " + (System.nanoTime() - started) / 1000 + " us, the mod's compat manifest allows " + limit / 1000);
+            }
         } catch (Throwable t) {
             Quarantine.freeze(entity, "entity " + entity.getType() + " at " + entity.blockPosition(), t, entity.level(), () -> {
                 CompoundTag tag = new CompoundTag();

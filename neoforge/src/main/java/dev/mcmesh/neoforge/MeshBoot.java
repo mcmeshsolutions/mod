@@ -30,6 +30,7 @@ public final class MeshBoot {
         if (MeshConfig.WORLD.get().isEmpty()) {
             return;
         }
+        CompatRegistry.scan();
         String memory = dev.mcmesh.core.PreFlight.heapProblem(Runtime.getRuntime().maxMemory(), MeshConfig.PACK_MIN_HEAP_MB.get());
         if (memory != null) {
             throw new IllegalStateException("mesh: not hosting, " + memory);

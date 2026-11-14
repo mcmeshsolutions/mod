@@ -28,12 +28,21 @@ public final class ChunkUploader {
         this.chain = new Chain(lease.hmacKey());
     }
 
+    /** Dimensions a mod declared ephemeral (compat manifest) are never uploaded. */
+    public static volatile java.util.function.Predicate<String> skipDimension = d -> false;
+
     /** kind is region, entities or poi. */
     public void put(String dim, String kind, int cx, int cz, byte[] data) {
+        if (skipDimension.test(dim)) {
+            return;
+        }
         record(new Key("put:" + kind, dim, cx, cz), data.clone());
     }
 
     public void delete(String dim, String kind, int cx, int cz) {
+        if (skipDimension.test(dim)) {
+            return;
+        }
         record(new Key("del:" + kind, dim, cx, cz), null);
     }
 
