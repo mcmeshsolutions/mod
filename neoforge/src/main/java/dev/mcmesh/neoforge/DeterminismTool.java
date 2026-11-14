@@ -25,6 +25,8 @@ public final class DeterminismTool {
         Path left = Path.of(a[0]).resolve("world/region");
         Path right = Path.of(a[1]).resolve("world/region");
         int inner = a.length > 2 ? Integer.parseInt(a[2]) : Integer.MAX_VALUE;
+        // the server keeps the spawn area loaded and ticks it, so its chunks differ for reasons that are not generation
+        int skipSpawn = a.length > 3 ? Integer.parseInt(a[3]) : 0;
         int same = 0;
         int different = 0;
         int onlyLeft = 0;
@@ -42,6 +44,9 @@ public final class DeterminismTool {
                     int cx = r[0] * 32 + (i & 31);
                     int cz = r[1] * 32 + (i >> 5);
                     if (Math.abs(cx) > inner || Math.abs(cz) > inner) {
+                        continue;
+                    }
+                    if (Math.abs(cx) <= skipSpawn && Math.abs(cz) <= skipSpawn) {
                         continue;
                     }
                     CompoundTag l = read(f, cx, cz);
