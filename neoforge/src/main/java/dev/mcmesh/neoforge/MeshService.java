@@ -37,6 +37,14 @@ public final class MeshService {
     public String worldId() {
         return worldId;
     }
+
+    java.nio.file.Path worldRoot() {
+        return worldRoot;
+    }
+
+    GatewayClient gateway() {
+        return gw;
+    }
     private volatile boolean handedOff;
     private volatile long lastSaveAt;
     private volatile long lastEmergencyAt;
@@ -74,6 +82,7 @@ public final class MeshService {
         }, hb -> {
             handedOff = true;
             LOG.info("gateway asked for a handover to {}", hb.migrateTargets());
+            MeshApiImpl.firePreMigrate(hb.targetNames().isEmpty() ? "" : hb.targetNames().get(0));
             var a = handoffAction;
             if (a != null) {
                 a.accept(hb.targetNames().isEmpty() ? "Another player" : hb.targetNames().get(0));
@@ -285,6 +294,8 @@ public final class MeshService {
         Thread.ofVirtual().name("mesh-tunnel").start(() -> keepTunnel(first));
         gw.hostReady(lease.id(), lease.epoch());
         current = this;
+        MeshApiImpl.checkRole();
+        MeshApiImpl.firePostPromote(worldId);
         Thread.ofVirtual().name("mesh-crash-report").start(this::reportPreviousCrash);
     }
 
@@ -365,6 +376,7 @@ public final class MeshService {
         if (fenced || commits.refused()) {
             return;
         }
+        MeshApiImpl.snapshotAll(worldRoot);
         scanRegions();
         aux.scan(worldRoot, uploader);
         uploader.flush(true);
@@ -466,6 +478,7 @@ public final class MeshService {
         }
         try {
             if (!fenced && !commits.refused()) {
+                MeshApiImpl.snapshotAll(worldRoot);
                 scanRegions();
                 aux.scan(worldRoot, uploader);
                 uploader.flush(true);
@@ -478,6 +491,7 @@ public final class MeshService {
             session.close();
             tunnel.close();
             current = null;
+            MeshApiImpl.checkRole();
             var after = afterHandoff;
             if (handedOff && after != null) {
                 Thread.ofVirtual().start(() -> after.accept(worldId));

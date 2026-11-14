@@ -39,6 +39,7 @@ public final class MeshEvents {
         }
         MeshOps.load(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize(), founder);
         MeshWhitelist.load(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize());
+        MeshApiImpl.restoreAll(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize());
         s.onFence(() -> server.execute(() -> server.halt(false)));
         s.onRefused(() -> server.execute(() -> server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal(
                 "The gateway refused the last save of this world (sanity check). Nothing more is uploaded this session. "

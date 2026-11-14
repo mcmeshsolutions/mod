@@ -430,6 +430,32 @@ public final class GatewayClient {
         return h;
     }
 
+    /** Newest first. */
+    public java.util.List<String> revisionIds(String world, int limit) throws IOException, GatewayException {
+        byte[] r = exec("/v1/worlds/" + world + "/revisions", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (var e : JsonParser.parseString(new String(r)).getAsJsonObject().getAsJsonArray("revisions")) {
+            if (out.size() >= limit) {
+                break;
+            }
+            out.add(e.getAsJsonObject().get("id").getAsString());
+        }
+        return out;
+    }
+
+    public record Member(String name, String role, double cpu) { }
+
+    public java.util.List<Member> members(String world) throws IOException, GatewayException {
+        byte[] r = exec("/v1/worlds/" + world + "/members", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
+        java.util.List<Member> out = new java.util.ArrayList<>();
+        for (var e : JsonParser.parseString(new String(r)).getAsJsonObject().getAsJsonArray("members")) {
+            JsonObject o = e.getAsJsonObject();
+            double cpu = o.has("hw") && o.get("hw").isJsonObject() && o.getAsJsonObject("hw").has("cpu") ? o.getAsJsonObject("hw").get("cpu").getAsDouble() : -1;
+            out.add(new Member(o.get("name").getAsString(), o.get("role").getAsString(), cpu));
+        }
+        return out;
+    }
+
     public RevisionFiles listRevision(String rev) throws IOException, GatewayException {
         byte[] r = exec("/v1/revisions/" + java.net.URLEncoder.encode(rev, java.nio.charset.StandardCharsets.UTF_8) + "/files", "GET",
                 HttpRequest.BodyPublishers.noBody(), "application/json");

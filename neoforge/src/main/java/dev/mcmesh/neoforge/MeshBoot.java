@@ -31,6 +31,7 @@ public final class MeshBoot {
             return;
         }
         CompatRegistry.scan();
+        MeshApiSelfTest.register();
         String memory = dev.mcmesh.core.PreFlight.heapProblem(Runtime.getRuntime().maxMemory(), MeshConfig.PACK_MIN_HEAP_MB.get());
         if (memory != null) {
             throw new IllegalStateException("mesh: not hosting, " + memory);

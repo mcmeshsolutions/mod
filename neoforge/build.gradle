@@ -22,11 +22,14 @@ neoForge {
         mcmesh {
             sourceSet sourceSets.main
             sourceSet project(':core').sourceSets.main
+            sourceSet project(':api').sourceSets.main
         }
     }
 }
 
 dependencies {
+    implementation project(':api')
+    jarJar(project(':api'))
     implementation project(':core')
     jarJar(project(':core'))
 }

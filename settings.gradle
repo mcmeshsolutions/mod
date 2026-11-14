@@ -5,4 +5,4 @@ pluginManagement {
     }
 }
 rootProject.name = 'mcmesh-mod'
-include 'core', 'neoforge'
+include 'api', 'core', 'neoforge'
