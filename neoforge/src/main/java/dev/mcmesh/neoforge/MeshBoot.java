@@ -34,11 +34,14 @@ public final class MeshBoot {
             Path root = universe.resolve(levelName()).toAbsolutePath().normalize();
             MeshTap.setRoot(root);
             MeshService s = MeshService.join(root, 1, Runtime.getRuntime().availableProcessors());
-            if (s == null && MeshConfig.ANCHOR_STANDBY.get()) {
+            if (s == null && ModGuard.problem == null && MeshConfig.ANCHOR_STANDBY.get()) {
                 s = standby(root);
             }
             if (s == null) {
-                throw new IllegalStateException("mesh: another machine holds the host lease for this world, not starting a second writer");
+                String why = ModGuard.problem;
+                throw new IllegalStateException(why != null
+                        ? "mesh: not hosting, the mods on this machine do not match the world: " + why
+                        : "mesh: another machine holds the host lease for this world, not starting a second writer");
             }
             held = s;
         } catch (RuntimeException e) {
