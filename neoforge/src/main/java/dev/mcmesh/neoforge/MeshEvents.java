@@ -23,6 +23,35 @@ public final class MeshEvents {
     }
 
     @SubscribeEvent
+    public static void islandProbeStart(ServerStartedEvent e) {
+        IslandProbe.start(e.getServer());
+    }
+
+    @SubscribeEvent
+    public static void islandProbeSample(ServerTickEvent.Post e) {
+        IslandProbe.sample(e.getServer());
+    }
+
+    @SubscribeEvent
+    public static void debugMapPush(ServerTickEvent.Post e) {
+        DebugNet.tick(e.getServer());
+    }
+
+    @SubscribeEvent
+    public static void anchorIdle(ServerTickEvent.Post e) {
+        if (e.getServer().getTickCount() % 20 == 0) {
+            AnchorIdle.check(e.getServer());
+        }
+    }
+
+    @SubscribeEvent
+    public static void debugMapForget(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent e) {
+        if (e.getEntity() instanceof net.minecraft.server.level.ServerPlayer p) {
+            DebugNet.forget(p);
+        }
+    }
+
+    @SubscribeEvent
     public static void started(ServerStartedEvent e) {
         MeshService s = MeshBoot.held();
         if (s == null) {
@@ -188,7 +217,8 @@ public final class MeshEvents {
     public static void stream(ServerTickEvent.Post e) {
         int every = MeshConfig.STREAM_SECONDS.get();
         MeshService s = MeshService.current();
-        if (every <= 0 || s == null || e.getServer().getTickCount() % (20 * every) != 0) {
+        if (every <= 0 || s == null || !MeshService.safeMode().streaming()
+                || e.getServer().getTickCount() % (20 * every) != 0) {
             return;
         }
         e.getServer().saveAllChunks(true, true, false);
@@ -262,6 +292,7 @@ public final class MeshEvents {
 
     @SubscribeEvent
     public static void stopping(ServerStoppedEvent e) {
+        IslandProbe.stop();
         LoadShed.restore(e.getServer());
         MeshService s = MeshBoot.held();
         MeshBoot.clear();

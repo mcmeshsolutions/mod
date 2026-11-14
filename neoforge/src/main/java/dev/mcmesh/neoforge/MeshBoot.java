@@ -39,7 +39,9 @@ public final class MeshBoot {
         try {
             Path root = universe.resolve(levelName()).toAbsolutePath().normalize();
             MeshTap.setRoot(root);
-            MeshService s = MeshService.join(root, 1, Runtime.getRuntime().availableProcessors());
+            // an anchor with wake on join must not grab a free world at boot either, or it would never be idle
+            boolean waitForDemand = MeshConfig.ANCHOR_STANDBY.get() && !wanted();
+            MeshService s = waitForDemand ? null : MeshService.join(root, 1, Runtime.getRuntime().availableProcessors());
             if (s == null && ModGuard.problem == null && MeshConfig.ANCHOR_STANDBY.get()) {
                 s = standby(root);
             }
@@ -89,6 +91,9 @@ public final class MeshBoot {
                 return null;
             }
             try {
+                if (!wanted()) {
+                    continue;
+                }
                 MeshService s = MeshService.join(root, 1, Runtime.getRuntime().availableProcessors());
                 if (s != null) {
                     LOG.info("anchor standby over after {} s, taking the host lease", (System.currentTimeMillis() - since) / 1000);
@@ -97,6 +102,29 @@ public final class MeshBoot {
             } catch (java.io.IOException e) {
                 LOG.warn("anchor standby: gateway not reachable, retrying: {}", e.toString());
             }
+        }
+    }
+
+    /**
+     * With wake on join the anchor stays idle until a player has actually tried to get in, so a modded world is not
+     * loaded all night for nobody. A gateway too old to answer the question is treated as "somebody wants it",
+     * which is the behaviour the anchor had before.
+     */
+    private static boolean wanted() {
+        if (!MeshConfig.ANCHOR_WAKE_ON_JOIN.get()) {
+            return true;
+        }
+        try {
+            var gw = new dev.mcmesh.core.GatewayClient(MeshConfig.API_URL.get(), MeshAuth.login().token());
+            long ago = gw.wantedSecondsAgo(MeshConfig.WORLD.get());
+            boolean wake = dev.mcmesh.core.AnchorDuty.shouldWake(true, ago);
+            if (wake) {
+                LOG.info("anchor waking up: {} was asked for {} s ago", MeshConfig.WORLD.get(), ago);
+            }
+            return wake;
+        } catch (Exception e) {
+            LOG.warn("anchor cannot ask whether the world is wanted, taking it as wanted: {}", e.toString());
+            return true;
         }
     }
 

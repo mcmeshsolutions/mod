@@ -13,6 +13,7 @@ public final class CompatManifest {
     private static final Set<String> SCOPES = Set.of("WORLD_GLOBAL", "TEAM", "PLAYER_PRIVATE");
     private static final Set<String> COUPLINGS = Set.of("HARD_PIN", "SOFT_AFFINITY", "DYNAMIC_TRACK");
     private static final Set<String> DIM_POLICIES = Set.of("EPHEMERAL_NO_CAS");
+    private static final Set<String> WORLDGEN = Set.of("DETERMINISTIC", "NONDETERMINISTIC");
 
     public record AuxPath(String glob, String scope) { }
 
@@ -24,8 +25,9 @@ public final class CompatManifest {
 
     public record DimensionPolicy(String dimension, String policy) { }
 
+    /** worldgen is null when the mod says nothing about its world generation. */
     public record Parsed(List<AuxPath> auxSyncPaths, List<Coupling> chunkCouplings, List<UdpChannel> udpChannels,
-                         Quarantine quarantine, List<DimensionPolicy> dimensionPolicies) { }
+                         Quarantine quarantine, List<DimensionPolicy> dimensionPolicies, String worldgen) { }
 
     public record Result(Parsed manifest, List<String> problems) {
         public boolean ok() {
@@ -116,10 +118,18 @@ public final class CompatManifest {
                 dims.add(new DimensionPolicy(dim, policy));
             }
         }
+        String worldgen = null;
+        if (doc.has("worldgen")) {
+            worldgen = str(doc, "worldgen");
+            if (worldgen == null || !WORLDGEN.contains(worldgen)) {
+                bad.add("worldgen must be one of " + WORLDGEN);
+                worldgen = null;
+            }
+        }
         if (!bad.isEmpty()) {
             return new Result(null, List.copyOf(bad));
         }
-        return new Result(new Parsed(List.copyOf(aux), List.copyOf(couplings), List.copyOf(udp), quarantine, List.copyOf(dims)), List.of());
+        return new Result(new Parsed(List.copyOf(aux), List.copyOf(couplings), List.copyOf(udp), quarantine, List.copyOf(dims), worldgen), List.of());
     }
 
     private static List<JsonObject> objects(JsonObject doc, String key, List<String> bad) {

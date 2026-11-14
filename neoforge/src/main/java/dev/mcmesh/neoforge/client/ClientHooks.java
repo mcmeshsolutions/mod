@@ -130,6 +130,7 @@ public final class ClientHooks {
             if (HostHealthHud.joinedWorld(Minecraft.getInstance()) != null) {
                 HostFlow.guestAliveAt = System.currentTimeMillis();
             }
+            DebugMap.renderOverlay(e.getGuiGraphics());
             var health = HostHealthHud.line();
             if (health != null) {
                 var f = Minecraft.getInstance().font;

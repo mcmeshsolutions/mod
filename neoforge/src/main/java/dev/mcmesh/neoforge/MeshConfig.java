@@ -19,6 +19,8 @@ public final class MeshConfig {
     public static final ModConfigSpec.IntValue AUTOSAVE_SECONDS;
     public static final ModConfigSpec.IntValue STREAM_SECONDS;
     public static final ModConfigSpec.BooleanValue ANCHOR_STANDBY;
+    public static final ModConfigSpec.BooleanValue ANCHOR_WAKE_ON_JOIN;
+    public static final ModConfigSpec.IntValue ANCHOR_IDLE_MINUTES;
     public static final ModConfigSpec.IntValue CHAT_RETENTION_DAYS;
     public static final ModConfigSpec.IntValue REPORT_CHAT_LINES;
     public static final ModConfigSpec.BooleanValue LAZY_BOOTSTRAP;
@@ -58,6 +60,8 @@ public final class MeshConfig {
         PLAYER_NAME = b.comment("name to claim on a dedicated server, where there is no launcher session").define("playerName", "");
         SHIP_LOGS = b.comment("send latest.log to the gateway operator once logged in, for debugging, off by default because logs can contain private details").define("shipLogs", false);
         ANCHOR_STANDBY = b.comment("dedicated server only: when another machine is hosting the world, wait for it to become free instead of refusing to start (anchor node, restart it with systemd)").define("anchorStandby", false);
+        ANCHOR_WAKE_ON_JOIN = b.comment("anchor only: do not take the world just because it is free, wait until someone tries to play it, and hand it back after anchorIdleMinutes with nobody on. Keeps a modded world from running all night for nobody. Needs a gateway that answers GET /v1/worlds/<id>/demand").define("anchorWakeOnJoin", false);
+        ANCHOR_IDLE_MINUTES = b.comment("anchor with wake on join: minutes with no players before the world is saved and handed back, so the machine goes idle. 0 keeps it up forever").defineInRange("anchorIdleMinutes", 10, 0, 1440);
         CHAT_RETENTION_DAYS = b.comment("while hosting, keep player chat in logs/mesh-chat (one file per day, on this machine only, never uploaded) for this many days so the owner can read it when a report comes in. 0 keeps nothing and deletes what was kept. Players are not told by the game, say so in your rules").defineInRange("chatRetentionDays", 0, 0, 90);
         REPORT_CHAT_LINES = b.comment("while hosting, remember the last N chat lines in memory only (never written to disk) so a player can run /meshreport chat <player> <reason> and attach them for the world owner. 0 turns the memory and the command off").defineInRange("reportChatLines", 20, 0, 100);
         LAZY_BOOTSTRAP = b.comment("on a full download, start the world once the regions near spawn and the players are on disk and fetch the rest in the background or when the game first needs it. Off by default").define("lazyBootstrap", false);

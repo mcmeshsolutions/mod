@@ -18,6 +18,9 @@ neoForge {
             // without nogui the dedicated server opens its Swing monitor window, so no script here is really headless (F-037)
             programArguments.add('nogui')
             gameDirectory = layout.projectDirectory.dir(providers.gradleProperty('mcmeshRunDir').getOrElse('run'))
+            // without nogui the dedicated server opens its Swing monitor window, which breaks headless and CI runs
+            programArguments.add('nogui')
+            systemProperty 'java.awt.headless', 'true'
         }
     }
     mods {
@@ -45,6 +48,12 @@ tasks.register('importWorld', JavaExec) {
 tasks.register('determinism', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'dev.mcmesh.neoforge.DeterminismTool'
+    args = (project.findProperty('toolArgs') ?: '').toString().split(' ').findAll { it }
+}
+
+tasks.register('islands', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dev.mcmesh.neoforge.IslandTool'
     args = (project.findProperty('toolArgs') ?: '').toString().split(' ').findAll { it }
 }
 

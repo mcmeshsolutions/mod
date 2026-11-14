@@ -17,13 +17,13 @@ import org.slf4j.LoggerFactory;
  * before the lid closes instead of after the gateway has fenced a host that went silent mid-save.
  * Needs systemd plus dbus-monitor or gdbus; without them it stays off and nothing changes.
  */
-final class SleepWatch {
+final class SuspendWatch {
     private static final Logger LOG = LoggerFactory.getLogger("mcmesh");
     private static volatile Process monitor;
     private static volatile Process inhibitor;
     private static volatile boolean started;
 
-    private SleepWatch() { }
+    private SuspendWatch() { }
 
     static boolean enabled() {
         return !"off".equalsIgnoreCase(System.getProperty("mcmesh.sleepwatch", "on"));
@@ -80,7 +80,7 @@ final class SleepWatch {
             stop();
             return;
         }
-        Runtime.getRuntime().addShutdownHook(new Thread(SleepWatch::stop, "mesh-sleepwatch-stop"));
+        Runtime.getRuntime().addShutdownHook(new Thread(SuspendWatch::stop, "mesh-sleepwatch-stop"));
         Thread.ofVirtual().name("mesh-sleepwatch").start(() -> read(monitor, onPowerDown));
         LOG.info("suspend watch armed with {} (logind delay inhibitor held while hosting)", cmd.get(0));
     }

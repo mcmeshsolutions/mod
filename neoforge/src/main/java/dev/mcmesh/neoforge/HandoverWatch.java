@@ -16,6 +16,8 @@ final class HandoverWatch {
     private static volatile boolean probing;
     private static int criticalStreak;
     private static boolean hinted;
+    private static final dev.mcmesh.core.SleepProbe.SleepWatch sleepWatch =
+            new dev.mcmesh.core.SleepProbe.SleepWatch(System.currentTimeMillis(), System.nanoTime() / 1_000_000);
 
     private HandoverWatch() { }
 
@@ -50,7 +52,7 @@ final class HandoverWatch {
      * The machine is suspending or shutting down and logind gives us only a few seconds (InhibitDelayMaxSec).
      * Flush the WAL barrier first, because that is the part that must finish inside the grace; the normal stop with its
      * full world save is started afterwards and may well be cut short by the suspend, in which case the gateway recovers
-     * from the barrier. Runs on a virtual thread, called by SleepWatch.
+     * from the barrier. Runs on a virtual thread, called by SuspendWatch.
      */
     private static void powerDown(MinecraftServer server, MeshService s) {
         try {
@@ -75,21 +77,34 @@ final class HandoverWatch {
             return;
         }
         probeLinkIfDue(s);
-        SleepWatch.start(() -> powerDown(server, s));
-        var decision = HandoverAdvisor.decide(BatteryProbe.read(), uploadMbps);
+        // three different moments: the logind signal acts before the suspend, the lid is an early hint, the clock
+        // check only notices one that already happened
+        SuspendWatch.start(() -> powerDown(server, s));
+        long slept = sleepWatch.check(System.currentTimeMillis(), System.nanoTime() / 1_000_000);
+        if (slept > 0) {
+            // the lease has almost certainly expired; epoch fencing refuses our commits, so say it plainly
+            LOG.warn("this machine was suspended for {} s while hosting: the lease may have moved to another player,"
+                    + " and any commit from this run is refused by its epoch", slept / 1000);
+        }
+        var battery = BatteryProbe.read();
+        var lid = dev.mcmesh.core.SleepProbe.read();
+        var decision = HandoverAdvisor.decide(battery, uploadMbps, lid);
+        // a closing lid suspends the machine within seconds, so there is no time for a second opinion 30 s later
+        boolean sleepImminent = lid == dev.mcmesh.core.SleepProbe.Lid.CLOSED && battery != null && battery.discharging();
         criticalStreak = decision == HandoverAdvisor.Decision.HAND_OVER_NOW ? criticalStreak + 1 : 0;
         if (decision == HandoverAdvisor.Decision.PREFER_HANDOVER && !hinted) {
             hinted = true;
             server.getPlayerList().broadcastSystemMessage(Component.literal(
                     "The host machine is struggling (low battery or a slow connection). Plug it in or check the network, or hosting will move to another player."), false);
         }
-        if (criticalStreak < 2 || server.getPlayerCount() < 2) {
+        if (criticalStreak < (sleepImminent ? 1 : 2) || server.getPlayerCount() < 2) {
             return;
         }
-        LOG.warn("host battery or uplink critical, handing the world over");
+        LOG.warn("host {}, handing the world over", sleepImminent ? "lid closed on battery, suspend imminent" : "battery or uplink critical");
         s.markHandedOff();
-        server.getPlayerList().broadcastSystemMessage(Component.literal(
-                "The host machine can no longer keep up (empty battery or a very slow connection). Hosting is moving to another player, you will be reconnected automatically."), false);
+        server.getPlayerList().broadcastSystemMessage(Component.literal(sleepImminent
+                ? "The host machine is going to sleep. Hosting is moving to another player, you will be reconnected automatically."
+                : "The host machine can no longer keep up (empty battery or a very slow connection). Hosting is moving to another player, you will be reconnected automatically."), false);
         Thread.ofVirtual().start(() -> {
             try {
                 Thread.sleep(8_000);

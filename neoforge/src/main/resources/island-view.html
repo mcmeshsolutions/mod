@@ -1,0 +1,380 @@
+<title>mcmesh spatial debug</title>
+<style>
+  :root {
+    --ground: #f3f5f7;
+    --panel: #ffffff;
+    --line: #d4dade;
+    --grid: #e3e8eb;
+    --region-line: #b9c3c9;
+    --ink: #161d23;
+    --ink-dim: #5c6a74;
+    --ink-faint: #8795a0;
+    --contested: #b35c09;
+    --forced: #2b7280;
+    --pending: #6b7a85;
+    --focus: #2b7280;
+    --i0: #3d6ea8; --i1: #2f8a6b; --i2: #a05a2c; --i3: #8a5ba8; --i4: #a03d52; --i5: #6b7f24;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0e1116; --panel: #151a21; --line: #262e37; --grid: #1c232b; --region-line: #313b45;
+      --ink: #e8edf1; --ink-dim: #93a1ac; --ink-faint: #68757f;
+      --contested: #d98324; --forced: #3c8f9c; --pending: #55636d; --focus: #4fa8b5;
+      --i0: #5b94d6; --i1: #45b48c; --i2: #c8803f; --i3: #ab7fd0; --i4: #d05f76; --i5: #93ad34;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0e1116; --panel: #151a21; --line: #262e37; --grid: #1c232b; --region-line: #313b45;
+    --ink: #e8edf1; --ink-dim: #93a1ac; --ink-faint: #68757f;
+    --contested: #d98324; --forced: #3c8f9c; --pending: #55636d; --focus: #4fa8b5;
+    --i0: #5b94d6; --i1: #45b48c; --i2: #c8803f; --i3: #ab7fd0; --i4: #d05f76; --i5: #93ad34;
+  }
+  :root[data-theme="light"] {
+    --ground: #f3f5f7; --panel: #ffffff; --line: #d4dade; --grid: #e3e8eb; --region-line: #b9c3c9;
+    --ink: #161d23; --ink-dim: #5c6a74; --ink-faint: #8795a0;
+    --contested: #b35c09; --forced: #2b7280; --pending: #6b7a85; --focus: #2b7280;
+    --i0: #3d6ea8; --i1: #2f8a6b; --i2: #a05a2c; --i3: #8a5ba8; --i4: #a03d52; --i5: #6b7f24;
+  }
+
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans); font-size: 14px; }
+  .wrap { display: grid; grid-template-columns: 17rem 1fr; min-height: 100vh; }
+  @media (max-width: 820px) { .wrap { grid-template-columns: 1fr; } }
+
+  .rail { border-right: 1px solid var(--line); background: var(--panel); padding: 1.25rem 1.1rem; display: flex; flex-direction: column; gap: 1.4rem; }
+  @media (max-width: 820px) { .rail { border-right: 0; border-bottom: 1px solid var(--line); } }
+
+  h1 { font-size: 0.9rem; margin: 0; font-weight: 650; letter-spacing: 0.02em; }
+  .sub { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-faint); margin-top: 0.3rem; }
+  .eyebrow { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.09em; color: var(--ink-faint); margin: 0 0 0.5rem; font-weight: 600; }
+
+  .stats { display: grid; gap: 0.42rem; }
+  .stat { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; }
+  .stat dt { color: var(--ink-dim); font-size: 0.78rem; }
+  .stat dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 0.86rem; }
+  .big { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 1.9rem; line-height: 1; }
+  .warn { color: var(--contested); }
+
+  .islands { display: grid; gap: 0.3rem; }
+  .isl { display: grid; grid-template-columns: 0.55rem 1fr auto; gap: 0.5rem; align-items: center; font-family: var(--mono); font-size: 0.75rem; }
+  .swatch { width: 0.55rem; height: 0.55rem; border-radius: 1px; }
+  .isl span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-dim); }
+
+  .layers { display: grid; gap: 0.35rem; }
+  label.toggle { display: flex; gap: 0.5rem; align-items: center; font-size: 0.8rem; color: var(--ink-dim); cursor: pointer; }
+  input[type="checkbox"] { accent-color: var(--focus); }
+
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .canvaswrap { position: relative; flex: 1; min-height: 24rem; }
+  canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  .readout { position: absolute; left: 0.75rem; bottom: 0.75rem; font-family: var(--mono); font-size: 0.72rem;
+    color: var(--ink-dim); background: color-mix(in srgb, var(--panel) 88%, transparent); padding: 0.3rem 0.5rem;
+    border: 1px solid var(--line); border-radius: 2px; pointer-events: none; font-variant-numeric: tabular-nums; }
+
+  .bar { border-top: 1px solid var(--line); background: var(--panel); padding: 0.8rem 1rem; display: flex; gap: 0.9rem; align-items: center; flex-wrap: wrap; }
+  button { font: inherit; font-size: 0.8rem; color: var(--ink); background: transparent; border: 1px solid var(--line);
+    border-radius: 2px; padding: 0.3rem 0.7rem; cursor: pointer; }
+  button:hover { border-color: var(--focus); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  input[type="range"] { flex: 1; min-width: 10rem; accent-color: var(--focus); }
+  .tick { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 0.8rem; color: var(--ink-dim); }
+  select { font: inherit; font-size: 0.8rem; background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 2px; padding: 0.25rem 0.4rem; }
+  .note { padding: 0.65rem 1rem; border-top: 1px solid var(--line); color: var(--ink-faint); font-size: 0.74rem; background: var(--panel); }
+</style>
+
+<div class="wrap">
+  <aside class="rail">
+    <div>
+      <h1>Spatial debug</h1>
+      <div class="sub" id="source">—</div>
+    </div>
+
+    <div>
+      <p class="eyebrow">At this sample</p>
+      <div class="big" id="islandCount">0</div>
+      <div class="sub" id="islandWord">islands</div>
+      <dl class="stats" style="margin-top:0.8rem">
+        <div class="stat"><dt>Players</dt><dd id="players">0</dd></div>
+        <div class="stat"><dt>Forced chunks</dt><dd id="forced">0</dd></div>
+        <div class="stat"><dt>Pending regions</dt><dd id="pending">0</dd></div>
+        <div class="stat"><dt>Contested</dt><dd id="contested">0</dd></div>
+      </dl>
+    </div>
+
+    <div>
+      <p class="eyebrow">Islands</p>
+      <div class="islands" id="islandList"></div>
+    </div>
+
+    <div>
+      <p class="eyebrow">Whole recording</p>
+      <dl class="stats">
+        <div class="stat"><dt>Samples</dt><dd id="totalSamples">0</dd></div>
+        <div class="stat"><dt>Split &gt; 1</dt><dd id="splitShare">0%</dd></div>
+        <div class="stat"><dt>Merges</dt><dd id="merges">0</dd></div>
+        <div class="stat"><dt>Splits</dt><dd id="splits">0</dd></div>
+      </dl>
+    </div>
+
+    <div>
+      <p class="eyebrow">Layers</p>
+      <div class="layers">
+        <label class="toggle"><input type="checkbox" id="lOwned" checked> Owned chunks</label>
+        <label class="toggle"><input type="checkbox" id="lHalo" checked> Halo</label>
+        <label class="toggle"><input type="checkbox" id="lPending" checked> Pending regions</label>
+        <label class="toggle"><input type="checkbox" id="lRegions" checked> Region grid</label>
+        <label class="toggle"><input type="checkbox" id="lTrails"> Player trails</label>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="canvaswrap">
+      <canvas id="map"></canvas>
+      <div class="readout" id="readout">drag to pan, scroll to zoom</div>
+    </div>
+    <div class="bar">
+      <button id="play">Play</button>
+      <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Sample">
+      <span class="tick" id="tickLabel">tick 0</span>
+      <select id="dim" aria-label="Dimension"></select>
+      <button id="fit">Fit</button>
+    </div>
+    <p class="note" id="note"></p>
+  </div>
+</div>
+
+<script>
+const DATA = __DATA__;
+const ISLAND_VARS = ["--i0","--i1","--i2","--i3","--i4","--i5"];
+const cv = document.getElementById("map");
+const ctx = cv.getContext("2d");
+let dim = DATA.dims[0];
+let idx = 0, playing = false, cell = 6, panX = 0, panZ = 0, dragging = null;
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const islandColor = i => css(ISLAND_VARS[i % ISLAND_VARS.length]);
+
+const dimSel = document.getElementById("dim");
+DATA.dims.forEach(d => { const o = document.createElement("option"); o.value = d; o.textContent = d; dimSel.appendChild(o); });
+dimSel.value = dim;
+document.getElementById("scrub").max = String(DATA.samples.length - 1);
+document.getElementById("source").textContent = DATA.source + " · view " + DATA.view + ", halo " + DATA.halo;
+document.getElementById("totalSamples").textContent = DATA.samples.length;
+document.getElementById("note").textContent = DATA.note;
+
+function frame() { return (DATA.samples[idx] && DATA.samples[idx].d[dim]) || {a: [], c: 0, p: []}; }
+
+function resize() {
+  const r = cv.parentElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.max(1, Math.round(r.width * dpr));
+  cv.height = Math.max(1, Math.round(r.height * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+
+function fit() {
+  const f = frame();
+  if (!f.a.length) { draw(); return; }
+  const xs = f.a.map(a => a[0]), zs = f.a.map(a => a[1]);
+  const pad = DATA.view + DATA.halo + 2;
+  const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad;
+  const minZ = Math.min(...zs) - pad, maxZ = Math.max(...zs) + pad;
+  const r = cv.parentElement.getBoundingClientRect();
+  cell = Math.max(1.2, Math.min(r.width / (maxX - minX + 1), r.height / (maxZ - minZ + 1)));
+  panX = (minX + maxX) / 2;
+  panZ = (minZ + maxZ) / 2;
+  draw();
+}
+
+// chunk coords -> screen px
+function sx(x) { return cv.clientWidth / 2 + (x - panX) * cell; }
+function sz(z) { return cv.clientHeight / 2 + (z - panZ) * cell; }
+
+function ownedCells(f) {
+  const owned = new Map();              // "x,z" -> island id
+  for (const [x, z, isl] of f.a) {
+    for (let dx = -DATA.view; dx <= DATA.view; dx++) {
+      for (let dz = -DATA.view; dz <= DATA.view; dz++) {
+        owned.set((x + dx) + "," + (z + dz), isl);
+      }
+    }
+  }
+  return owned;
+}
+
+function draw() {
+  const w = cv.clientWidth, h = cv.clientHeight;
+  ctx.clearRect(0, 0, w, h);
+  const f = frame();
+
+  if (document.getElementById("lRegions").checked && cell > 0.8) {
+    ctx.strokeStyle = css("--region-line");
+    ctx.lineWidth = 1;
+    const step = 32;
+    const firstX = Math.floor((panX - w / (2 * cell)) / step) * step;
+    const lastX = panX + w / (2 * cell);
+    for (let x = firstX; x <= lastX; x += step) {
+      ctx.beginPath(); ctx.moveTo(sx(x), 0); ctx.lineTo(sx(x), h); ctx.stroke();
+    }
+    const firstZ = Math.floor((panZ - h / (2 * cell)) / step) * step;
+    const lastZ = panZ + h / (2 * cell);
+    for (let z = firstZ; z <= lastZ; z += step) {
+      ctx.beginPath(); ctx.moveTo(0, sz(z)); ctx.lineTo(w, sz(z)); ctx.stroke();
+    }
+  }
+
+  if (document.getElementById("lPending").checked) {
+    ctx.fillStyle = css("--pending");
+    ctx.globalAlpha = 0.28;
+    for (const [rx, rz] of (f.p || [])) {
+      ctx.fillRect(sx(rx * 32), sz(rz * 32), 32 * cell, 32 * cell);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  const owned = ownedCells(f);
+  if (document.getElementById("lHalo").checked) {
+    ctx.globalAlpha = 0.14;
+    for (const [key, isl] of owned) {
+      const [x, z] = key.split(",").map(Number);
+      ctx.fillStyle = islandColor(isl);
+      ctx.fillRect(sx(x - DATA.halo), sz(z - DATA.halo), (2 * DATA.halo + 1) * cell, (2 * DATA.halo + 1) * cell);
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (document.getElementById("lOwned").checked) {
+    for (const [key, isl] of owned) {
+      const [x, z] = key.split(",").map(Number);
+      ctx.fillStyle = islandColor(isl);
+      ctx.globalAlpha = 0.5;
+      ctx.fillRect(sx(x), sz(z), Math.max(1, cell), Math.max(1, cell));
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  if (document.getElementById("lTrails").checked) {
+    const byId = new Map();
+    for (let i = 0; i <= idx; i++) {
+      const s = DATA.samples[i].d[dim];
+      if (!s) continue;
+      for (const [x, z, isl, kind, name] of s.a) {
+        if (kind !== 0) continue;
+        if (!byId.has(name)) byId.set(name, []);
+        byId.get(name).push([x, z]);
+      }
+    }
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = css("--ink-faint");
+    for (const path of byId.values()) {
+      ctx.beginPath();
+      path.forEach(([x, z], i) => i ? ctx.lineTo(sx(x + 0.5), sz(z + 0.5)) : ctx.moveTo(sx(x + 0.5), sz(z + 0.5)));
+      ctx.stroke();
+    }
+  }
+
+  for (const [x, z, isl, kind, name] of f.a) {
+    const cx = sx(x + 0.5), cz = sz(z + 0.5);
+    ctx.fillStyle = kind === 1 ? css("--forced") : islandColor(isl);
+    const r = kind === 1 ? 2.5 : 3.5;
+    ctx.beginPath(); ctx.arc(cx, cz, r, 0, Math.PI * 2); ctx.fill();
+    if (kind === 0 && cell > 3) {
+      ctx.fillStyle = css("--ink");
+      ctx.font = "11px " + css("--mono");
+      ctx.fillText(name, cx + 6, cz + 3.5);
+    }
+  }
+
+  if (f.c > 0) {
+    ctx.strokeStyle = css("--contested");
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, w - 2, h - 2);
+  }
+  sidebar(f, owned);
+}
+
+function sidebar(f, owned) {
+  const players = f.a.filter(a => a[3] === 0);
+  const forced = f.a.filter(a => a[3] === 1);
+  const groups = new Map();
+  for (const [x, z, isl, kind, name] of f.a) {
+    if (!groups.has(isl)) groups.set(isl, []);
+    groups.get(isl).push(kind === 1 ? "forced " + x + "," + z : name);
+  }
+  document.getElementById("islandCount").textContent = groups.size;
+  document.getElementById("islandWord").textContent = groups.size === 1 ? "island" : "islands";
+  document.getElementById("players").textContent = players.length;
+  document.getElementById("forced").textContent = forced.length;
+  document.getElementById("pending").textContent = (f.p || []).length;
+  const cEl = document.getElementById("contested");
+  cEl.textContent = f.c;
+  cEl.classList.toggle("warn", f.c > 0);
+
+  const list = document.getElementById("islandList");
+  list.textContent = "";
+  const counts = new Map();
+  for (const isl of owned.values()) counts.set(isl, (counts.get(isl) || 0) + 1);
+  [...groups.entries()].sort((a, b) => a[0] - b[0]).forEach(([isl, names]) => {
+    const row = document.createElement("div");
+    row.className = "isl";
+    const sw = document.createElement("span");
+    sw.className = "swatch";
+    sw.style.background = islandColor(isl);
+    const who = document.createElement("span");
+    who.textContent = names.join(", ");
+    const n = document.createElement("span");
+    n.textContent = (counts.get(isl) || 0) + "ch";
+    row.append(sw, who, n);
+    list.appendChild(row);
+  });
+
+  document.getElementById("tickLabel").textContent = "tick " + DATA.samples[idx].t;
+  const st = DATA.stats[dim] || {split: 0, merges: 0, splits: 0, samples: 1};
+  document.getElementById("splitShare").textContent = (100 * st.split / st.samples).toFixed(1) + "%";
+  document.getElementById("merges").textContent = st.merges;
+  document.getElementById("splits").textContent = st.splits;
+}
+
+document.getElementById("scrub").addEventListener("input", e => { idx = +e.target.value; draw(); });
+dimSel.addEventListener("change", e => { dim = e.target.value; fit(); });
+document.getElementById("fit").addEventListener("click", fit);
+const playBtn = document.getElementById("play");
+playBtn.addEventListener("click", () => {
+  playing = !playing;
+  playBtn.textContent = playing ? "Pause" : "Play";
+  if (playing) step();
+});
+function step() {
+  if (!playing) return;
+  idx = (idx + 1) % DATA.samples.length;
+  document.getElementById("scrub").value = String(idx);
+  draw();
+  setTimeout(step, 180);
+}
+cv.addEventListener("pointerdown", e => { dragging = {x: e.clientX, z: e.clientY}; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener("pointerup", () => { dragging = null; });
+cv.addEventListener("pointermove", e => {
+  const x = Math.round(panX + (e.offsetX - cv.clientWidth / 2) / cell);
+  const z = Math.round(panZ + (e.offsetY - cv.clientHeight / 2) / cell);
+  document.getElementById("readout").textContent =
+    "chunk " + x + ", " + z + "   block " + (x * 16) + ", " + (z * 16) + "   region " + Math.floor(x / 32) + ", " + Math.floor(z / 32);
+  if (!dragging) return;
+  panX -= (e.clientX - dragging.x) / cell;
+  panZ -= (e.clientY - dragging.z) / cell;
+  dragging = {x: e.clientX, z: e.clientY};
+  draw();
+});
+cv.addEventListener("wheel", e => {
+  e.preventDefault();
+  cell = Math.min(40, Math.max(0.5, cell * (e.deltaY < 0 ? 1.12 : 0.89)));
+  draw();
+}, {passive: false});
+["lOwned","lHalo","lPending","lRegions","lTrails"].forEach(id =>
+  document.getElementById(id).addEventListener("change", draw));
+window.addEventListener("resize", resize);
+new MutationObserver(draw).observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme"]});
+resize();
+fit();
+</script>

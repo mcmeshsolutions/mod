@@ -202,6 +202,7 @@ public final class MeshService {
         s.exitHook = new Thread(s::shutdownAfterServerStop, "mesh-exit");
         Runtime.getRuntime().addShutdownHook(s.exitHook);
         try {
+            s.decideSafeMode();
             try {
                 var files = gw.listRevision(h.lease().baseRev());
                 // rebuilding from the gateway only makes sense when it holds the terrain; without chunks the local folder is the only copy
@@ -297,6 +298,55 @@ public final class MeshService {
         MeshApiImpl.checkRole();
         MeshApiImpl.firePostPromote(worldId);
         Thread.ofVirtual().name("mesh-crash-report").start(this::reportPreviousCrash);
+        Thread.ofVirtual().name("mesh-safemode-clear").start(this::clearStreakWhenHealthy);
+    }
+
+    /** How carefully this boot runs. Static because the sync reads it before {@code current} is set. */
+    private static volatile dev.mcmesh.core.SafeMode.Decision safeMode =
+            new dev.mcmesh.core.SafeMode.Decision(dev.mcmesh.core.SafeMode.Level.NORMAL, 0, true, true, "no hosting run yet");
+
+    static dev.mcmesh.core.SafeMode.Decision safeMode() {
+        return safeMode;
+    }
+
+    /** Reads the crash streak of this world and decides what to switch off, before anything touches the world folder. */
+    private void decideSafeMode() {
+        long now = System.currentTimeMillis();
+        try {
+            var state = dev.mcmesh.core.SafeMode.read(safeModeFile());
+            // peek, not begin: the marker is written later, when hosting really starts
+            var decision = dev.mcmesh.core.SafeMode.decide(state, dev.mcmesh.core.CrashMarker.peek(crashMarker()), now);
+            safeMode = decision;
+            dev.mcmesh.core.SafeMode.write(safeModeFile(), dev.mcmesh.core.SafeMode.next(decision, now));
+            if (decision.careful()) {
+                LOG.warn("safe mode for {}: {}", worldId, decision.reason());
+            } else if (decision.crashes() > 0) {
+                LOG.info("safe mode for {}: {}", worldId, decision.reason());
+            }
+        } catch (Exception e) {
+            safeMode = new dev.mcmesh.core.SafeMode.Decision(dev.mcmesh.core.SafeMode.Level.NORMAL, 0, true, true, "safe mode check failed");
+            LOG.warn("safe mode check failed, hosting normally: {}", e.toString());
+        }
+    }
+
+    /** A run that lasted this long is healthy, so the next crash is a one-off again. */
+    private void clearStreakWhenHealthy() {
+        try {
+            Thread.sleep(dev.mcmesh.core.SafeMode.HEALTHY_MS);
+            if (current == this) {
+                dev.mcmesh.core.SafeMode.write(safeModeFile(), dev.mcmesh.core.SafeMode.healthy());
+                LOG.debug("safe mode: {} has run cleanly for {} minutes, crash streak cleared",
+                        worldId, dev.mcmesh.core.SafeMode.HEALTHY_MS / 60_000);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            LOG.debug("safe mode state not cleared: {}", e.toString());
+        }
+    }
+
+    private java.nio.file.Path safeModeFile() {
+        return net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get().resolve("mcmesh-safemode-" + worldId + ".json");
     }
 
     private java.nio.file.Path crashMarker() {
@@ -318,6 +368,9 @@ public final class MeshService {
             }
             gw.crashReport(worldId, dev.mcmesh.core.CrashMarker.head(report, 60_000));
             LOG.warn("the last hosting run of {} crashed, report {} sent to the gateway", worldId, report.getFileName());
+            if (safeMode.level() == dev.mcmesh.core.SafeMode.Level.LAST_RESORT) {
+                LOG.error(dev.mcmesh.core.SafeMode.recoveryHint(worldId, gw.revisionIds(worldId, 5)));
+            }
         } catch (Exception e) {
             LOG.debug("crash report not sent: {}", e.toString());
         }
