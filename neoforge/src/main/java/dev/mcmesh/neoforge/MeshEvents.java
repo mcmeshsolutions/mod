@@ -23,6 +23,16 @@ public final class MeshEvents {
     }
 
     @SubscribeEvent
+    public static void islandProbeStart(ServerStartedEvent e) {
+        IslandProbe.start(e.getServer());
+    }
+
+    @SubscribeEvent
+    public static void islandProbeSample(ServerTickEvent.Post e) {
+        IslandProbe.sample(e.getServer());
+    }
+
+    @SubscribeEvent
     public static void started(ServerStartedEvent e) {
         MeshService s = MeshBoot.held();
         if (s == null) {
@@ -262,6 +272,7 @@ public final class MeshEvents {
 
     @SubscribeEvent
     public static void stopping(ServerStoppedEvent e) {
+        IslandProbe.stop();
         LoadShed.restore(e.getServer());
         MeshService s = MeshBoot.held();
         MeshBoot.clear();

@@ -149,6 +149,11 @@ final class LazyWorld {
         }
     }
 
+    /** Region keys still waiting on the gateway, for the island probe and the spatial debug view. */
+    java.util.Set<String> pendingKeys() {
+        return java.util.Set.copyOf(pending.keySet());
+    }
+
     /** Called by the region storage before it opens any region file. Blocks until the region is on disk. */
     void guard(String dim, int cx, int cz) {
         String key = LazyPlan.regionKey(dim, cx, cz);
