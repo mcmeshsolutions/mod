@@ -38,6 +38,13 @@ public final class MeshEvents {
     }
 
     @SubscribeEvent
+    public static void anchorIdle(ServerTickEvent.Post e) {
+        if (e.getServer().getTickCount() % 20 == 0) {
+            AnchorIdle.check(e.getServer());
+        }
+    }
+
+    @SubscribeEvent
     public static void debugMapForget(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent e) {
         if (e.getEntity() instanceof net.minecraft.server.level.ServerPlayer p) {
             DebugNet.forget(p);

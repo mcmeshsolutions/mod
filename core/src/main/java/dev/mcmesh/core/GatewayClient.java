@@ -469,6 +469,17 @@ public final class GatewayClient {
         return h;
     }
 
+    /**
+     * Seconds since someone tried to play this world and could not get in, or -1 when nobody has. A hint only: the
+     * gateway keeps it in memory and a guest who never calls join does not set it. See PROTOCOL.md.
+     */
+    public long wantedSecondsAgo(String world) throws IOException, GatewayException {
+        byte[] r = exec("/v1/worlds/" + world + "/demand", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
+        var o = JsonParser.parseString(new String(r)).getAsJsonObject();
+        var age = o.get("wanted_s_ago");
+        return age == null || age.isJsonNull() ? -1 : age.getAsLong();
+    }
+
     /** Newest first. */
     public java.util.List<String> revisionIds(String world, int limit) throws IOException, GatewayException {
         byte[] r = exec("/v1/worlds/" + world + "/revisions", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
