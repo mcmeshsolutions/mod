@@ -75,10 +75,12 @@ public final class MeshCommands {
                     Thread.ofVirtual().start(() -> {
                         try {
                             var doc = ModGuard.snapshot();
-                            new dev.mcmesh.core.GatewayClient(MeshConfig.API_URL.get(), MeshAuth.cached().token()).putWorldMods(world, doc);
+                            new dev.mcmesh.core.GatewayClient(MeshConfig.API_URL.get(), MeshAuth.token()).putWorldMods(world, doc);
                             int n = doc.getAsJsonArray("allow").size();
+                            org.slf4j.LoggerFactory.getLogger("mcmesh").info("published {} mods as the allowlist of {}", n, world);
                             src.getServer().execute(() -> src.sendSuccess(() -> Component.literal("Published " + n + " mods as the allowlist of " + world), true));
                         } catch (Exception ex) {
+                            org.slf4j.LoggerFactory.getLogger("mcmesh").warn("publishing the mod allowlist of {} failed: {}", world, ex.toString());
                             src.getServer().execute(() -> src.sendFailure(Component.literal("Publish failed (admin of the world only): " + ex.getMessage())));
                         }
                     });
@@ -100,15 +102,21 @@ public final class MeshCommands {
                     return 1;
                 }))
                 .then(Commands.literal("add").then(Commands.argument("name", StringArgumentType.word()).executes(c -> {
-                    MeshWhitelist.add(StringArgumentType.getString(c, "name"));
+                    String n = StringArgumentType.getString(c, "name");
+                    MeshWhitelist.add(n);
+                    c.getSource().sendSuccess(() -> Component.literal(n + " added to the mesh whitelist"), false);
                     return 1;
                 })))
                 .then(Commands.literal("remove").then(Commands.argument("name", StringArgumentType.word()).executes(c -> {
-                    MeshWhitelist.remove(StringArgumentType.getString(c, "name"));
+                    String n = StringArgumentType.getString(c, "name");
+                    MeshWhitelist.remove(n);
+                    c.getSource().sendSuccess(() -> Component.literal(n + " removed from the mesh whitelist"), false);
                     return 1;
                 })))
                 .then(Commands.literal("enabled").then(Commands.argument("on", BoolArgumentType.bool()).executes(c -> {
-                    MeshWhitelist.enabled(BoolArgumentType.getBool(c, "on"));
+                    boolean on = BoolArgumentType.getBool(c, "on");
+                    MeshWhitelist.enabled(on);
+                    c.getSource().sendSuccess(() -> Component.literal("Mesh whitelist " + (on ? "on" : "off")), false);
                     return 1;
                 }))));
     }

@@ -30,6 +30,12 @@ public final class MeshAuth {
         return cached;
     }
 
+    /** The token this machine hosts with: the configured static token (dedicated servers) or a login. */
+    public static String token() throws Exception {
+        String configured = MeshConfig.TOKEN.get();
+        return configured.isEmpty() ? cached().token() : configured;
+    }
+
     /** Keys the device right after login so a world that requires signed commits never meets an unregistered host. */
     private static void registerKeyInBackground(String token) {
         Thread t = new Thread(() -> {
