@@ -110,8 +110,13 @@ public final class MeshEvents {
         }
     }
 
+    static final dev.mcmesh.core.ChatBuffer RECENT = new dev.mcmesh.core.ChatBuffer(100);
+
     @SubscribeEvent
     public static void chatKeep(net.neoforged.neoforge.event.ServerChatEvent e) {
+        if (MeshConfig.REPORT_CHAT_LINES.get() > 0 && MeshService.current() != null) {
+            RECENT.add(java.time.Instant.now(), e.getUsername(), e.getRawText());
+        }
         var c = chat;
         if (c == null || MeshService.current() == null) {
             return;

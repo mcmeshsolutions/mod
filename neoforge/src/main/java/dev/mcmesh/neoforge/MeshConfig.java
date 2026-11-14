@@ -20,6 +20,7 @@ public final class MeshConfig {
     public static final ModConfigSpec.IntValue STREAM_SECONDS;
     public static final ModConfigSpec.BooleanValue ANCHOR_STANDBY;
     public static final ModConfigSpec.IntValue CHAT_RETENTION_DAYS;
+    public static final ModConfigSpec.IntValue REPORT_CHAT_LINES;
     public static final ModConfigSpec.BooleanValue LAZY_BOOTSTRAP;
     public static final ModConfigSpec.IntValue LAZY_MIN_CHUNKS;
     public static final ModConfigSpec.IntValue LAZY_RADIUS_REGIONS;
@@ -58,6 +59,7 @@ public final class MeshConfig {
         SHIP_LOGS = b.comment("send latest.log to the gateway operator once logged in, for debugging, off by default because logs can contain private details").define("shipLogs", false);
         ANCHOR_STANDBY = b.comment("dedicated server only: when another machine is hosting the world, wait for it to become free instead of refusing to start (anchor node, restart it with systemd)").define("anchorStandby", false);
         CHAT_RETENTION_DAYS = b.comment("while hosting, keep player chat in logs/mesh-chat (one file per day, on this machine only, never uploaded) for this many days so the owner can read it when a report comes in. 0 keeps nothing and deletes what was kept. Players are not told by the game, say so in your rules").defineInRange("chatRetentionDays", 0, 0, 90);
+        REPORT_CHAT_LINES = b.comment("while hosting, remember the last N chat lines in memory only (never written to disk) so a player can run /meshreport chat <player> <reason> and attach them for the world owner. 0 turns the memory and the command off").defineInRange("reportChatLines", 20, 0, 100);
         LAZY_BOOTSTRAP = b.comment("on a full download, start the world once the regions near spawn and the players are on disk and fetch the rest in the background or when the game first needs it. Off by default").define("lazyBootstrap", false);
         LAZY_MIN_CHUNKS = b.comment("lazy bootstrap only applies to worlds with at least this many stored chunk entries (region, entities and poi count separately)").defineInRange("lazyMinChunks", 20000, 1, Integer.MAX_VALUE);
         LAZY_RADIUS_REGIONS = b.comment("regions (512 blocks) around spawn and each player that are downloaded before the world opens").defineInRange("lazyRadiusRegions", 2, 0, 16);

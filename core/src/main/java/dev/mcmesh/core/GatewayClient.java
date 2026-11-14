@@ -414,6 +414,16 @@ public final class GatewayClient {
         post("/v1/anchors/register", o);
     }
 
+    /** The live host files a report on behalf of a player who agreed to attach the given text. */
+    public void hostReport(String lease, long epoch, String reporter, String target, String reason, String evidence) throws IOException, GatewayException {
+        JsonObject o = epoch(epoch);
+        o.addProperty("reporter", reporter);
+        o.addProperty("name", target);
+        o.addProperty("reason", reason);
+        o.addProperty("evidence", evidence);
+        post("/v1/leases/" + lease + "/report", o);
+    }
+
     public void hostReady(String lease, long epoch) throws IOException, GatewayException {
         post("/v1/leases/" + lease + "/host-ready", epoch(epoch));
     }

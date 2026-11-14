@@ -86,6 +86,12 @@ public final class MeshCommands {
                     });
                     return 1;
                 })));
+        d.register(Commands.literal("meshreport")
+                .requires(s -> s.getPlayer() != null && MeshService.current() != null && MeshConfig.REPORT_CHAT_LINES.get() > 0)
+                .then(Commands.literal("chat").then(Commands.argument("player", StringArgumentType.word())
+                        .then(Commands.argument("reason", StringArgumentType.greedyString()).executes(c -> report(c.getSource(), StringArgumentType.getString(c, "player"), StringArgumentType.getString(c, "reason"), true)))))
+                .then(Commands.argument("player", StringArgumentType.word())
+                        .then(Commands.argument("reason", StringArgumentType.greedyString()).executes(c -> report(c.getSource(), StringArgumentType.getString(c, "player"), StringArgumentType.getString(c, "reason"), false)))));
         d.register(Commands.literal("meshwl")
                 .requires(MeshCommands::canWhitelist)
                 .executes(c -> {
@@ -119,6 +125,35 @@ public final class MeshCommands {
                     c.getSource().sendSuccess(() -> Component.literal("Mesh whitelist " + (on ? "on" : "off")), false);
                     return 1;
                 }))));
+    }
+
+    private static int report(CommandSourceStack src, String target, String reason, boolean withChat) {
+        var me = src.getPlayer();
+        MeshService s = MeshService.current();
+        if (me == null || s == null) {
+            return 0;
+        }
+        int n = MeshConfig.REPORT_CHAT_LINES.get();
+        String evidence = withChat ? MeshEvents.RECENT.last(n, 3900) : "";
+        String who = me.getGameProfile().getName();
+        src.sendSuccess(() -> Component.literal(withChat
+                ? "Sending your report. The last " + n + " chat lines (everyone's) are attached and the world owner will read them."
+                : "Sending your report without chat."), false);
+        var server = src.getServer();
+        Thread.ofVirtual().start(() -> {
+            String msg;
+            try {
+                s.gateway().hostReport(s.lease().id(), s.lease().epoch(), who, target, reason, evidence);
+                msg = "Report sent to the world owner. " + target + " is not told.";
+            } catch (dev.mcmesh.core.GatewayException ex) {
+                msg = "The report was not accepted: " + ex.getMessage();
+            } catch (Exception ex) {
+                msg = "The report could not be sent: " + ex;
+            }
+            String text = msg;
+            server.execute(() -> me.sendSystemMessage(Component.literal(text)));
+        });
+        return 1;
     }
 
     private static boolean canWhitelist(CommandSourceStack s) {
