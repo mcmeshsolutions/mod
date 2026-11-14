@@ -33,6 +33,18 @@ public final class MeshEvents {
     }
 
     @SubscribeEvent
+    public static void debugMapPush(ServerTickEvent.Post e) {
+        DebugNet.tick(e.getServer());
+    }
+
+    @SubscribeEvent
+    public static void debugMapForget(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent e) {
+        if (e.getEntity() instanceof net.minecraft.server.level.ServerPlayer p) {
+            DebugNet.forget(p);
+        }
+    }
+
+    @SubscribeEvent
     public static void started(ServerStartedEvent e) {
         MeshService s = MeshBoot.held();
         if (s == null) {
