@@ -30,6 +30,7 @@ public final class GatewayClient {
     }
 
     private static final int RATE_LIMIT_RETRIES = 3;
+    private static final int CONNECTION_RETRIES = 2;
 
     private static long retryAfterMs(HttpResponse<byte[]> r) {
         try {
@@ -44,6 +45,8 @@ public final class GatewayClient {
                 .header("x-mesh-pack", pack).header("x-mesh-pack-version", packVersion).header("x-mesh-client", String.valueOf(PROTOCOL)).header("content-type", contentType).timeout(Duration.ofSeconds(20)).build();
         HttpResponse<byte[]> r;
         int limited = 0;
+        int dropped = 0;
+        boolean idempotent = method.equals("GET") || method.equals("PUT") || method.equals("DELETE");
         while (true) {
             try {
                 r = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
@@ -55,6 +58,19 @@ public final class GatewayClient {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IOException("interrupted", e);
+            } catch (IOException e) {
+                // a pooled connection that a proxy or the gateway closed while idle fails before any answer comes back;
+                // only requests that can be repeated without effect are sent again, never commits or WAL appends
+                if (idempotent && dropped++ < CONNECTION_RETRIES) {
+                    try {
+                        Thread.sleep(200L * dropped);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw e;
+                    }
+                    continue;
+                }
+                throw e;
             }
             break;
         }
