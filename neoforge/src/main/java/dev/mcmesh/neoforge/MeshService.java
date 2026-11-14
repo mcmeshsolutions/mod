@@ -373,6 +373,18 @@ public final class MeshService {
         }
     }
 
+    /**
+     * Streaming: sends what changed since the last scan to the gateway WAL and seals it with a barrier, without making a revision.
+     * If this host dies, the gateway turns the WAL up to that barrier into a RECOVERED revision, so a crash loses seconds, not minutes.
+     */
+    public synchronized void checkpoint() throws Exception {
+        if (fenced || commits.refused()) {
+            return;
+        }
+        scanRegions();
+        uploader.flush(true);
+    }
+
     /** Autosave out of schedule, at most once a minute. Returns false when throttled. */
     public boolean emergencySave() throws Exception {
         long now = System.currentTimeMillis();

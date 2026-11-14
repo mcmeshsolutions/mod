@@ -17,6 +17,7 @@ public final class MeshConfig {
     public static final ModConfigSpec.BooleanValue SHIP_LOGS;
     public static final ModConfigSpec.BooleanValue SHOW_HOST_HEALTH;
     public static final ModConfigSpec.IntValue AUTOSAVE_SECONDS;
+    public static final ModConfigSpec.IntValue STREAM_SECONDS;
     public static final ModConfigSpec.BooleanValue ANCHOR_STANDBY;
     public static final ModConfigSpec.ConfigValue<String> AUTH_MODE;
     public static final ModConfigSpec.ConfigValue<String> PLAYER_NAME;
@@ -53,6 +54,7 @@ public final class MeshConfig {
         ANCHOR_STANDBY = b.comment("dedicated server only: when another machine is hosting the world, wait for it to become free instead of refusing to start (anchor node, restart it with systemd)").define("anchorStandby", false);
         SHOW_HOST_HEALTH = b.comment("show a small line in the corner of the screen about how well the host machine is doing").define("showHostHealth", true);
         AUTOSAVE_SECONDS = b.comment("seconds between uploads of the world to the gateway while hosting; a crash loses at most this much play, a smaller number uploads more often").defineInRange("autosaveSeconds", 120, 20, 3600);
+        STREAM_SECONDS = b.comment("0 turns streaming off. Otherwise every this many seconds the changes since the last upload are sent to the gateway without making a revision, so a crash or a power cut loses at most this much play; the gateway recovers them from its write-ahead log. Costs a little disk and network on the host").defineInRange("streamSeconds", 0, 0, 120);
         PUBLIC_HOST = b.comment("address players type to reach the gateway; tickets are attached only when connecting to it").define("publicHost", "play.23012006.xyz");
         DISCORD_APP = b.comment("Discord application id for rich presence; empty disables it").define("discordAppId", "");
         MODPACK_URL = b.comment("direct link to a Prism instance export (.zip); empty hides the modpack updater").define("modpackUrl", "");

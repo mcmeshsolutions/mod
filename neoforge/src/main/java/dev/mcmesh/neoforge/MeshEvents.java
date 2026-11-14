@@ -117,6 +117,25 @@ public final class MeshEvents {
     }
 
     @SubscribeEvent
+    public static void stream(ServerTickEvent.Post e) {
+        int every = MeshConfig.STREAM_SECONDS.get();
+        MeshService s = MeshService.current();
+        if (every <= 0 || s == null || e.getServer().getTickCount() % (20 * every) != 0) {
+            return;
+        }
+        e.getServer().saveAllChunks(true, true, false);
+        Thread.ofVirtual().start(() -> {
+            try {
+                s.checkpoint();
+            } catch (Exception ex) {
+                if (!dev.mcmesh.core.QuotaNotice.isQuota(ex)) {
+                    LOG.warn("streaming checkpoint failed: {}", ex.toString());
+                }
+            }
+        });
+    }
+
+    @SubscribeEvent
     public static void loadShedding(ServerTickEvent.Post e) {
         if (e.getServer().getTickCount() % 20 != 0) {
             return;
