@@ -27,29 +27,36 @@ final class ResearchCommands {
     private static void generate(ServerLevel level, int x1, int z1, int x2, int z2) {
         long t0 = System.nanoTime();
         var cache = level.getChunkSource();
-        // the one tick ticket getChunkFuture adds expires before generation ends when we are not blocking the server thread
-        level.getServer().submit(() -> {
+        // ticking while the area generates is what makes a run unreproducible (F-038), and the one-tick ticket
+        // getChunkFuture adds expires as soon as the server thread is free, so freeze the tick and hold the chunks
+        // every future is requested up front, on the server thread, in one fixed order: waiting row by row instead
+        // changes which chunks generate next to each other and the features spilling between them stop matching (F-038)
+        List<CompletableFuture<ChunkResult<ChunkAccess>>> all = level.getServer().submit(() -> {
+            level.getServer().tickRateManager().setFrozen(true);
+            List<CompletableFuture<ChunkResult<ChunkAccess>>> out = new ArrayList<>();
             for (int cx = x1; cx <= x2; cx++) {
                 for (int cz = z1; cz <= z2; cz++) {
                     ChunkPos p = new ChunkPos(cx, cz);
                     cache.addRegionTicket(HOLD, p, 0, p);
+                    out.add(cache.getChunkFuture(cx, cz, ChunkStatus.FULL, true));
                 }
             }
+            return out;
         }).join();
         long ok = 0;
         long total = 0;
-        for (int cx = x1; cx <= x2; cx++) {
-            List<CompletableFuture<ChunkResult<ChunkAccess>>> row = new ArrayList<>();
-            for (int cz = z1; cz <= z2; cz++) {
-                row.add(cache.getChunkFuture(cx, cz, ChunkStatus.FULL, true));
-            }
-            for (var f : row) {
+        try {
+            for (var f : all) {
                 total++;
                 if (f.join().isSuccess()) {
                     ok++;
                 }
+                if (total % 64 == 0) {
+                    state = "running " + total;
+                }
             }
-            state = "running " + total;
+        } finally {
+            level.getServer().submit(() -> level.getServer().tickRateManager().setFrozen(false));
         }
         state = "done " + ok + " of " + total + " chunks full in " + (System.nanoTime() - t0) / 1_000_000 + " ms";
     }
