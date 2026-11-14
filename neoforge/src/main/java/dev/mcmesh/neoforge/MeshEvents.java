@@ -210,7 +210,8 @@ public final class MeshEvents {
     public static void stream(ServerTickEvent.Post e) {
         int every = MeshConfig.STREAM_SECONDS.get();
         MeshService s = MeshService.current();
-        if (every <= 0 || s == null || e.getServer().getTickCount() % (20 * every) != 0) {
+        if (every <= 0 || s == null || !MeshService.safeMode().streaming()
+                || e.getServer().getTickCount() % (20 * every) != 0) {
             return;
         }
         e.getServer().saveAllChunks(true, true, false);

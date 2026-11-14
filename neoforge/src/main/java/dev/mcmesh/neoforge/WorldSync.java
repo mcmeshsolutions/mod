@@ -82,7 +82,8 @@ final class WorldSync {
             Sink sink = new Sink(root);
             try {
                 SyncProgress.begin();
-                if (MeshConfig.LAZY_BOOTSTRAP.get() && files.chunks().size() >= MeshConfig.LAZY_MIN_CHUNKS.get()) {
+                if (MeshConfig.LAZY_BOOTSTRAP.get() && MeshService.safeMode().lazyBootstrap()
+                        && files.chunks().size() >= MeshConfig.LAZY_MIN_CHUNKS.get()) {
                     lazyDownload(gw, root, rev, files, sink, marker);
                 } else {
                     int n = WorldDownloader.download(gw, rev, sink, SyncProgress::update);
