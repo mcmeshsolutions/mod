@@ -16,6 +16,9 @@ neoForge {
         server {
             server()
             gameDirectory = layout.projectDirectory.dir(providers.gradleProperty('mcmeshRunDir').getOrElse('run'))
+            // without nogui the dedicated server opens its Swing monitor window, which breaks headless and CI runs
+            programArguments.add('nogui')
+            systemProperty 'java.awt.headless', 'true'
         }
     }
     mods {

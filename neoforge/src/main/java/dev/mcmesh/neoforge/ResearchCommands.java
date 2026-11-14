@@ -3,6 +3,7 @@ package dev.mcmesh.neoforge;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.commands.CommandSourceStack;
@@ -10,11 +11,14 @@ import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ChunkResult;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.TicketType;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 /** Only with -Dmcmesh.research=true: generates a chunk rectangle to full status without ticking, and times it. */
 final class ResearchCommands {
+    private static final TicketType<ChunkPos> HOLD = TicketType.create("mesh_research", Comparator.comparingLong(ChunkPos::toLong));
     private static volatile String state = "idle";
 
     private ResearchCommands() { }
@@ -23,6 +27,15 @@ final class ResearchCommands {
     private static void generate(ServerLevel level, int x1, int z1, int x2, int z2) {
         long t0 = System.nanoTime();
         var cache = level.getChunkSource();
+        // the one tick ticket getChunkFuture adds expires before generation ends when we are not blocking the server thread
+        level.getServer().submit(() -> {
+            for (int cx = x1; cx <= x2; cx++) {
+                for (int cz = z1; cz <= z2; cz++) {
+                    ChunkPos p = new ChunkPos(cx, cz);
+                    cache.addRegionTicket(HOLD, p, 0, p);
+                }
+            }
+        }).join();
         long ok = 0;
         long total = 0;
         for (int cx = x1; cx <= x2; cx++) {
