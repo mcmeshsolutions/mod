@@ -20,9 +20,27 @@ public final class HandoverAdvisor {
 
     /** `uploadMbps` below zero means unknown. The worse of the two verdicts wins. */
     public static Decision decide(Battery b, double uploadMbps) {
+        return decide(b, uploadMbps, SleepProbe.Lid.UNKNOWN);
+    }
+
+    /** The worst of battery, uplink and lid wins. */
+    public static Decision decide(Battery b, double uploadMbps, SleepProbe.Lid lid) {
         Decision battery = batteryVerdict(b);
         Decision link = uploadMbps < 0 ? Decision.STAY : uploadMbps < UNUSABLE_UPLINK_MBPS ? Decision.HAND_OVER_NOW : uploadMbps < POOR_UPLINK_MBPS ? Decision.PREFER_HANDOVER : Decision.STAY;
-        return battery.ordinal() >= link.ordinal() ? battery : link;
+        Decision worst = battery.ordinal() >= link.ordinal() ? battery : link;
+        Decision sleep = sleepVerdict(b, lid);
+        return worst.ordinal() >= sleep.ordinal() ? worst : sleep;
+    }
+
+    /**
+     * A closed lid on battery means the machine is about to suspend and take the world with it. A closed lid while
+     * charging is the normal docked desktop setup and must not move hosting anywhere.
+     */
+    private static Decision sleepVerdict(Battery b, SleepProbe.Lid lid) {
+        if (lid != SleepProbe.Lid.CLOSED || b == null || !b.discharging()) {
+            return Decision.STAY;
+        }
+        return Decision.HAND_OVER_NOW;
     }
 
     private static Decision batteryVerdict(Battery b) {
