@@ -18,6 +18,10 @@ class NoOpTest {
         assertFalse(api.aux().put(MeshAuxStore.Scope.WORLD_GLOBAL, "mymod", "k", new byte[] {1}));
         assertFalse(api.aux().remove(MeshAuxStore.Scope.TEAM, "mymod", "k"));
         api.state().register("x", () -> new byte[0], b -> { });
+        assertTrue(api.locks().tryLock("mymod", "quarry", java.time.Duration.ofSeconds(30)).isEmpty());
+        assertFalse(api.locks().unlock("mymod", "quarry"));
+        api.scheduler().submit(() -> fail("a no-op scheduler never runs work"));
+        assertEquals(0, api.scheduler().queued());
         assertTrue(api.revisions().revisionIds(5).isEmpty());
         assertTrue(api.revisions().readAux("w:R_1", "level.dat").isEmpty());
         MeshListener l = new MeshListener() { };

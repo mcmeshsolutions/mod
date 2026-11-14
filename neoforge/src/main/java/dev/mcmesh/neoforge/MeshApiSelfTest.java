@@ -29,6 +29,16 @@ final class MeshApiSelfTest {
                 LOG.info("selftest postPromote {} aux put {} read back {}", worldId, put, back);
                 LOG.info("selftest invalid name refused: {}", !api.aux().put(MeshAuxStore.Scope.WORLD_GLOBAL, "../x", "k", new byte[] {1}));
                 Thread.ofVirtual().start(() -> {
+                    var a = api.locks().tryLock("selftest", "demo", java.time.Duration.ofSeconds(30));
+                    var other = api.locks().tryLock("selftest2", "demo", java.time.Duration.ofSeconds(30));
+                    var again = api.locks().tryLock("selftest", "demo", java.time.Duration.ofSeconds(30));
+                    boolean freed = api.locks().unlock("selftest", "demo");
+                    var after = api.locks().tryLock("selftest2", "demo", java.time.Duration.ofSeconds(30));
+                    LOG.info("selftest lock: first {} other {} renewed {} freed {} next token {}", a.isPresent(), other.isPresent(),
+                            again.map(h -> h.fenceToken() == a.get().fenceToken()).orElse(false), freed, after.map(h -> h.fenceToken() > a.get().fenceToken()).orElse(false));
+                    api.scheduler().submit(() -> LOG.info("selftest scheduler ran on {}", Thread.currentThread().getName()));
+                });
+                Thread.ofVirtual().start(() -> {
                     var ids = api.revisions().revisionIds(5);
                     String old = ids.isEmpty() ? "none" : api.revisions().readAux(ids.get(0), "mesh/aux/world_global/selftest/hello")
                             .map(b -> new String(b, StandardCharsets.UTF_8)).orElse("missing");

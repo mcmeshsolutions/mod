@@ -385,6 +385,27 @@ public final class GatewayClient {
         return new Heartbeat(targets, names);
     }
 
+    public record LockResult(boolean granted, long token, String heldBy) { }
+
+    private static JsonObject lockBody(long epoch, String name, String owner) {
+        JsonObject o = epoch(epoch);
+        o.addProperty("name", name);
+        o.addProperty("owner", owner);
+        return o;
+    }
+
+    public LockResult lock(String lease, long epoch, String name, String owner, int ttlSeconds) throws IOException, GatewayException {
+        JsonObject o = lockBody(epoch, name, owner);
+        o.addProperty("ttl_s", ttlSeconds);
+        JsonObject r = post("/v1/leases/" + lease + "/lock", o);
+        boolean granted = r.get("granted").getAsBoolean();
+        return new LockResult(granted, granted ? r.get("token").getAsLong() : 0, r.has("held_by") ? r.get("held_by").getAsString() : null);
+    }
+
+    public boolean unlock(String lease, long epoch, String name, String owner) throws IOException, GatewayException {
+        return post("/v1/leases/" + lease + "/unlock", lockBody(epoch, name, owner)).get("released").getAsBoolean();
+    }
+
     public void hostReady(String lease, long epoch) throws IOException, GatewayException {
         post("/v1/leases/" + lease + "/host-ready", epoch(epoch));
     }

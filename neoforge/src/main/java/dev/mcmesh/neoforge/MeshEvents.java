@@ -155,6 +155,13 @@ public final class MeshEvents {
     }
 
     @SubscribeEvent
+    public static void modTasks(ServerTickEvent.Post e) {
+        if (MeshApiImpl.TICKS.size() > 0) {
+            MeshApiImpl.TICKS.run(dev.mcmesh.core.BudgetedQueue.budgetMicros(LoadShed.reportedLevel()));
+        }
+    }
+
+    @SubscribeEvent
     public static void stream(ServerTickEvent.Post e) {
         int every = MeshConfig.STREAM_SECONDS.get();
         MeshService s = MeshService.current();

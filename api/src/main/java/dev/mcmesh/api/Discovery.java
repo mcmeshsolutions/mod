@@ -49,11 +49,22 @@ final class Discovery {
             public Optional<byte[]> readAux(String revisionId, String path) { return Optional.empty(); }
         };
 
+        private final MeshLocks locks = new MeshLocks() {
+            public Optional<Held> tryLock(String owner, String name, java.time.Duration ttl) { return Optional.empty(); }
+            public boolean unlock(String owner, String name) { return false; }
+        };
+        private final MeshTickScheduler scheduler = new MeshTickScheduler() {
+            public void submit(Runnable work) { }
+            public int queued() { return 0; }
+        };
+
         public SessionMode mode() { return SessionMode.STANDALONE_LOCAL; }
         public String worldId() { return null; }
         public List<Peer> peers() { return List.of(); }
         public boolean requestTakeover() { return false; }
         public MeshAuxStore aux() { return aux; }
+        public MeshLocks locks() { return locks; }
+        public MeshTickScheduler scheduler() { return scheduler; }
         public MeshStateRegistry state() { return state; }
         public MeshRevisionBrowser revisions() { return revisions; }
         public void addListener(MeshListener listener) { }

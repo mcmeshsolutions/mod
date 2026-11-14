@@ -148,6 +148,60 @@ public final class MeshApiImpl implements MeshApi {
     }
 
     @Override
+    public dev.mcmesh.api.MeshLocks locks() {
+        return new dev.mcmesh.api.MeshLocks() {
+            @Override
+            public Optional<Held> tryLock(String owner, String name, java.time.Duration ttl) {
+                MeshService s = MeshService.current();
+                if (s == null || !validName(owner) || !validName(name)) {
+                    return Optional.empty();
+                }
+                try {
+                    var r = s.gateway().lock(s.lease().id(), s.lease().epoch(), name, owner, (int) Math.max(1, Math.min(3600, ttl.toSeconds())));
+                    return r.granted() ? Optional.of(new Held(name, r.token())) : Optional.empty();
+                } catch (Exception e) {
+                    LOG.debug("lock {} failed: {}", name, e.toString());
+                    return Optional.empty();
+                }
+            }
+
+            @Override
+            public boolean unlock(String owner, String name) {
+                MeshService s = MeshService.current();
+                if (s == null || !validName(owner) || !validName(name)) {
+                    return false;
+                }
+                try {
+                    return s.gateway().unlock(s.lease().id(), s.lease().epoch(), name, owner);
+                } catch (Exception e) {
+                    LOG.debug("unlock {} failed: {}", name, e.toString());
+                    return false;
+                }
+            }
+        };
+    }
+
+    static final dev.mcmesh.core.BudgetedQueue TICKS = new dev.mcmesh.core.BudgetedQueue(System::nanoTime,
+            t -> LOG.warn("a scheduled mod task failed: {}", t.toString()));
+
+    @Override
+    public dev.mcmesh.api.MeshTickScheduler scheduler() {
+        return new dev.mcmesh.api.MeshTickScheduler() {
+            @Override
+            public void submit(Runnable work) {
+                if (work != null) {
+                    TICKS.submit(work);
+                }
+            }
+
+            @Override
+            public int queued() {
+                return TICKS.size();
+            }
+        };
+    }
+
+    @Override
     public MeshStateRegistry state() {
         return (id, snapshot, restore) -> {
             if (validName(id) && snapshot != null && restore != null) {

@@ -19,10 +19,15 @@ public interface MeshApi {
     /** Blocks on the network (cached for 30 s): never call it on the server thread. Empty when there is no mesh world. */
     List<Peer> peers();
 
-    /** Not available yet in v0: always false. */
+    /** Not available yet: always false. */
     boolean requestTakeover();
 
     MeshAuxStore aux();
+
+    /** Gateway-backed named locks, fenced by the host epoch. A no-op that never grants anything when there is no mesh host. */
+    MeshLocks locks();
+
+    MeshTickScheduler scheduler();
 
     MeshStateRegistry state();
 
