@@ -76,7 +76,7 @@ public final class LeaseSession implements AutoCloseable {
     }
 
     public void start() {
-        thread = Thread.ofVirtual().name("mesh-lease").start(() -> {
+        thread = Threads.start("mesh-lease", () -> {
             try {
                 while (!fenced()) {
                     try {

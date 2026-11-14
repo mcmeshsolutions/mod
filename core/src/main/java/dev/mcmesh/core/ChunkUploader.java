@@ -108,7 +108,8 @@ public final class ChunkUploader {
     private List<byte[]> putBlobs(List<Map.Entry<Key, byte[]>> items) throws IOException, GatewayException {
         java.util.concurrent.Semaphore gate = new java.util.concurrent.Semaphore(PARALLEL);
         List<java.util.concurrent.Future<byte[]>> fs = new ArrayList<>(items.size());
-        try (var ex = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+        java.util.concurrent.ExecutorService ex = Threads.perTaskExecutor();
+        try {
             for (Map.Entry<Key, byte[]> e : items) {
                 byte[] data = e.getValue();
                 if (data == null) {
@@ -124,6 +125,8 @@ public final class ChunkUploader {
                     }
                 }));
             }
+        } finally {
+            ex.shutdown();
         }
         List<byte[]> out = new ArrayList<>(fs.size());
         for (var f : fs) {

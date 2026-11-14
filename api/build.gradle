@@ -2,8 +2,10 @@ plugins { id 'java-library' }
 
 repositories { mavenCentral() }
 
-java { sourceCompatibility = JavaVersion.VERSION_21; targetCompatibility = JavaVersion.VERSION_21 }
-tasks.withType(JavaCompile) { options.release = 21 }
+java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+tasks.withType(JavaCompile) { options.release = 17 }
+// tests run on the build JDK and may use newer library calls
+tasks.named("compileTestJava") { options.release = 21 }
 
 dependencies {
     testImplementation platform('org.junit:junit-bom:5.10.2')

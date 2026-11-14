@@ -157,14 +157,14 @@ public final class TunnelAgent implements AutoCloseable {
         InetSocketAddress target = chan == 0 ? server : cs.get(chan - 1);
         Stream st = new Stream(new Socket(), new ArrayBlockingQueue<>(32));
         streams.put(id, st);
-        Thread.ofVirtual().name("mesh-stream-" + id).start(() -> pump(id, st, target));
+        Threads.start("mesh-stream-" + id, () -> pump(id, st, target));
     }
 
     private void pump(int id, Stream st, InetSocketAddress target) {
         try {
             st.sock().setTcpNoDelay(true);
             st.sock().connect(target, 5000);
-            Thread.ofVirtual().name("mesh-stream-w-" + id).start(() -> {
+            Threads.start("mesh-stream-w-" + id, () -> {
                 try {
                     OutputStream o = st.sock().getOutputStream();
                     while (true) {
@@ -217,7 +217,7 @@ public final class TunnelAgent implements AutoCloseable {
             d.connect(target);
             DatagramSocket fresh = d;
             peers.put(id, fresh);
-            Thread.ofVirtual().name("mesh-voice-" + id).start(() -> {
+            Threads.start("mesh-voice-" + id, () -> {
                 byte[] buf = new byte[2048];
                 DatagramPacket p = new DatagramPacket(buf, buf.length);
                 try {
