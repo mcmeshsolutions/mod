@@ -38,6 +38,24 @@ class CompatRulesTest {
     }
 
     @Test
+    void oneNondeterministicWorldgenModSwitchesDistributionOff() {
+        assertTrue(CompatRules.NONE.worldgenDistributable());
+        CompatRules ok = CompatRules.of(Map.of("terralith", parse("{\"schema\":1,\"worldgen\":\"DETERMINISTIC\"}"), "silent", parse("{\"schema\":1}")));
+        assertTrue(ok.worldgenDistributable());
+        assertTrue(ok.declaredDeterministic("terralith"));
+        assertFalse(ok.declaredDeterministic("silent"));
+        CompatRules bad = CompatRules.of(Map.of("terralith", parse("{\"schema\":1,\"worldgen\":\"DETERMINISTIC\"}"), "wild", parse("{\"schema\":1,\"worldgen\":\"NONDETERMINISTIC\"}")));
+        assertFalse(bad.worldgenDistributable());
+        assertEquals(java.util.Set.of("wild"), bad.nondeterministicWorldgenMods());
+    }
+
+    @Test
+    void anUnknownWorldgenValueRefusesTheManifest() {
+        var r = CompatManifest.parse(JsonParser.parseString("{\"schema\":1,\"worldgen\":\"MAYBE\"}").getAsJsonObject());
+        assertFalse(r.ok());
+    }
+
+    @Test
     void neverDeleteIdsAreRemembered() {
         CompatRules r = CompatRules.of(Map.of("create", parse("{\"schema\":1,\"quarantine_rules\":{\"never_delete\":[\"create:bearing\"]}}")));
         assertTrue(r.neverDelete("create:bearing"));
