@@ -26,6 +26,11 @@ public final class HostBench {
         return cached;
     }
 
+    /** The number every bid uses: the CPU score, discounted by the last measured uplink (see HostBid). */
+    public static double bidScore() {
+        return dev.mcmesh.core.HostBid.score(get().get("cpu").getAsDouble(), dev.mcmesh.core.BandwidthProbe.lastMbps);
+    }
+
     /** Million mixing steps per second. */
     private static double spin(long ms) {
         long end = System.nanoTime() + ms * 1_000_000L;

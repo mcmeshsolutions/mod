@@ -18,7 +18,7 @@ public final class MeshMod {
         });
         // the listing asks the gateway "could I take over?" with this score, long before any hosting has loaded MeshService;
         // without it the score falls back to the core count and a strong machine looks weaker than the host
-        dev.mcmesh.core.GatewayClient.hwScore = () -> HostBench.get().get("cpu").getAsDouble();
+        dev.mcmesh.core.GatewayClient.hwScore = HostBench::bidScore;
         LogShipper.start();
     }
 }

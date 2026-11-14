@@ -46,12 +46,36 @@ final class HandoverWatch {
         });
     }
 
+    /**
+     * The machine is suspending or shutting down and logind gives us only a few seconds (InhibitDelayMaxSec).
+     * Flush the WAL barrier first, because that is the part that must finish inside the grace; the normal stop with its
+     * full world save is started afterwards and may well be cut short by the suspend, in which case the gateway recovers
+     * from the barrier. Runs on a virtual thread, called by SleepWatch.
+     */
+    private static void powerDown(MinecraftServer server, MeshService s) {
+        try {
+            s.checkpoint();
+        } catch (Exception e) {
+            LOG.warn("checkpoint before suspend failed: {}", e.toString());
+        }
+        if (server.getPlayerCount() < 2) {
+            return;
+        }
+        s.markHandedOff();
+        server.execute(() -> {
+            server.getPlayerList().broadcastSystemMessage(Component.literal(
+                    "The host machine is going to sleep. Hosting is moving to another player, you will be reconnected automatically."), false);
+            server.halt(false);
+        });
+    }
+
     /** Called every 30 seconds while hosting, on the server thread. */
     static void check(MinecraftServer server, MeshService s) {
         if (!enabled() || server.isDedicatedServer()) {
             return;
         }
         probeLinkIfDue(s);
+        SleepWatch.start(() -> powerDown(server, s));
         var decision = HandoverAdvisor.decide(BatteryProbe.read(), uploadMbps);
         criticalStreak = decision == HandoverAdvisor.Decision.HAND_OVER_NOW ? criticalStreak + 1 : 0;
         if (decision == HandoverAdvisor.Decision.PREFER_HANDOVER && !hinted) {

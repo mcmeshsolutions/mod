@@ -6,6 +6,9 @@ import java.util.Random;
 public final class BandwidthProbe {
     static final int PROBE_BYTES = 512 * 1024;
 
+    /** The last measurement anything in this JVM made, or -1 when nothing has measured yet. Read by {@link HostBid}. */
+    public static volatile double lastMbps = -1;
+
     private BandwidthProbe() { }
 
     /** Megabits per second, or -1 when the probe failed or the clock gave nothing to divide by. */
@@ -15,10 +18,11 @@ public final class BandwidthProbe {
         try {
             long start = System.nanoTime();
             gw.bandwidthProbe(body);
-            return mbps(PROBE_BYTES, System.nanoTime() - start);
+            lastMbps = mbps(PROBE_BYTES, System.nanoTime() - start);
         } catch (Exception e) {
-            return -1;
+            lastMbps = -1;
         }
+        return lastMbps;
     }
 
     static double mbps(long bytes, long nanos) {

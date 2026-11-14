@@ -54,7 +54,7 @@ public final class MeshService {
     public static volatile java.util.function.Consumer<String> afterHandoff;
     static {
         dev.mcmesh.core.GatewayClient.syncProgress = SyncProgress::report;
-        GatewayClient.hwScore = () -> HostBench.get().get("cpu").getAsDouble();
+        GatewayClient.hwScore = HostBench::bidScore;
         GatewayClient.playerCount = LoadShed::reportedPlayers;
         GatewayClient.loadLevel = LoadShed::reportedLevel;
     }
