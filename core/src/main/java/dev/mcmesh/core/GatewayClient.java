@@ -445,6 +445,18 @@ public final class GatewayClient {
 
     public record Member(String name, String role, double cpu) { }
 
+    public record Banned(String uuid, String name) { }
+
+    public java.util.List<Banned> banned(String world) throws IOException, GatewayException {
+        byte[] r = exec("/v1/worlds/" + world + "/banned", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
+        java.util.List<Banned> out = new java.util.ArrayList<>();
+        for (var e : JsonParser.parseString(new String(r)).getAsJsonObject().getAsJsonArray("banned")) {
+            JsonObject o = e.getAsJsonObject();
+            out.add(new Banned(o.get("uuid").getAsString(), o.get("name").getAsString()));
+        }
+        return out;
+    }
+
     public java.util.List<Member> members(String world) throws IOException, GatewayException {
         byte[] r = exec("/v1/worlds/" + world + "/members", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
         java.util.List<Member> out = new java.util.ArrayList<>();

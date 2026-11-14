@@ -40,6 +40,7 @@ public final class MeshEvents {
         MeshOps.load(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize(), founder);
         MeshWhitelist.load(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize());
         MeshApiImpl.restoreAll(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize());
+        BanSync.refresh(server, s);
         s.onFence(() -> server.execute(() -> server.halt(false)));
         s.onRefused(() -> server.execute(() -> server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal(
                 "The gateway refused the last save of this world (sanity check). Nothing more is uploaded this session. "
@@ -90,6 +91,42 @@ public final class MeshEvents {
             } finally {
                 HALTING.set(false);
             }
+        }
+    }
+
+    private static volatile dev.mcmesh.core.ChatRetention chat;
+
+    @SubscribeEvent
+    public static void chatStart(ServerStartedEvent e) {
+        int days = MeshConfig.CHAT_RETENTION_DAYS.get();
+        chat = new dev.mcmesh.core.ChatRetention(e.getServer().getServerDirectory().resolve("logs/mesh-chat"), days);
+        try {
+            int gone = chat.prune(java.time.Instant.now());
+            if (gone > 0) {
+                LOG.info("chat retention: removed {} day files older than {} days", gone, days);
+            }
+        } catch (java.io.IOException ex) {
+            LOG.warn("chat retention: could not prune: {}", ex.toString());
+        }
+    }
+
+    @SubscribeEvent
+    public static void chatKeep(net.neoforged.neoforge.event.ServerChatEvent e) {
+        var c = chat;
+        if (c == null || MeshService.current() == null) {
+            return;
+        }
+        try {
+            c.record(java.time.Instant.now(), e.getUsername(), e.getRawText());
+        } catch (java.io.IOException ex) {
+            LOG.warn("chat retention: could not write: {}", ex.toString());
+        }
+    }
+
+    @SubscribeEvent
+    public static void banOnLogin(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent e) {
+        if (MeshService.current() != null && e.getEntity() instanceof net.minecraft.server.level.ServerPlayer p) {
+            BanSync.kickIfBanned(p);
         }
     }
 
@@ -147,6 +184,9 @@ public final class MeshEvents {
             LoadShed.sample(e.getServer());
             if (e.getServer().getTickCount() % 600 == 0) {
                 HandoverWatch.check(e.getServer(), hosting);
+            }
+            if (e.getServer().getTickCount() % 1200 == 0) {
+                BanSync.refresh(e.getServer(), hosting);
             }
         } else {
             LoadShed.restore(e.getServer());
