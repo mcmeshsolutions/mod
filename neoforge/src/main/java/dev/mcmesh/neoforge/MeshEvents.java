@@ -12,7 +12,6 @@ import org.slf4j.Logger;
 @EventBusSubscriber(modid = "mcmesh")
 public final class MeshEvents {
     private static final Logger LOG = LogUtils.getLogger();
-    private static final int AUTOSAVE_TICKS = 20 * 120;
 
     private MeshEvents() { }
 
@@ -94,7 +93,7 @@ public final class MeshEvents {
     @SubscribeEvent
     public static void tick(ServerTickEvent.Post e) {
         MeshService s = MeshService.current();
-        if (s != null && e.getServer().getTickCount() % AUTOSAVE_TICKS == 0) {
+        if (s != null && e.getServer().getTickCount() % (20 * MeshConfig.AUTOSAVE_SECONDS.get()) == 0) {
             // vanilla writes dirty chunks only every 5 minutes, and the mesh only sees region writes, so force them out first
             e.getServer().saveAllChunks(true, true, false);
             Thread.ofVirtual().start(() -> {
