@@ -15,6 +15,19 @@ class LazyPlanTest {
     }
 
     @Test
+    void prefetchStartsWithTheStandingRegionThenAheadThenTheRing() {
+        var still = LazyPlan.prefetchKeys("minecraft:overworld", 40, -3, 0, 0);
+        assertEquals("minecraft:overworld|1|-1", still.get(0));
+        assertEquals(9, still.size(), "own region plus the eight around it");
+        var east = LazyPlan.prefetchKeys("minecraft:overworld", 40, -3, 5, 1);
+        assertEquals(List.of("minecraft:overworld|1|-1", "minecraft:overworld|2|-1", "minecraft:overworld|3|-1"), east.subList(0, 3));
+        assertEquals(10, east.size(), "the first region ahead is also in the ring, so only the second adds one");
+        var north = LazyPlan.prefetchKeys("minecraft:overworld", 0, 0, 1, -4);
+        assertEquals("minecraft:overworld|0|-1", north.get(1));
+        assertEquals("minecraft:overworld|0|-2", north.get(2));
+    }
+
+    @Test
     void regionsNearAnAnchorAreEagerAndTheRestWait() {
         List<RevisionFiles.Chunk> chunks = new ArrayList<>();
         for (int cx = 0; cx < 320; cx += 32) {

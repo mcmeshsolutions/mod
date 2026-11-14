@@ -31,6 +31,31 @@ public final class LazyPlan {
      * Regions within {@code radius} regions of an anchor are eager. A dimension with no anchor is eager as a whole when it has at most
      * {@code smallDimChunks} chunk entries (the nether and the end are usually small), otherwise it waits like the rest.
      */
+    /**
+     * Regions worth having before the player gets there: the one they stand in, then the ones ahead along the dominant axis of
+     * their movement (when they are moving), then the eight around them. Direction is the sign of the chunk delta since the last
+     * look, 0 when standing still.
+     */
+    public static List<String> prefetchKeys(String dim, int cx, int cz, int dirX, int dirZ) {
+        int rx = cx >> 5;
+        int rz = cz >> 5;
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        out.add(dim + "|" + rx + "|" + rz);
+        int ax = Math.abs(dirX) >= Math.abs(dirZ) ? Integer.signum(dirX) : 0;
+        int az = ax == 0 ? Integer.signum(dirZ) : 0;
+        if (ax != 0 || az != 0) {
+            for (int step = 1; step <= 2; step++) {
+                out.add(dim + "|" + (rx + ax * step) + "|" + (rz + az * step));
+            }
+        }
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                out.add(dim + "|" + (rx + dx) + "|" + (rz + dz));
+            }
+        }
+        return List.copyOf(out);
+    }
+
     public static Set<String> eagerRegions(List<RevisionFiles.Chunk> chunks, List<Anchor> anchors, int radius, int smallDimChunks) {
         Set<String> eager = new TreeSet<>();
         for (Anchor a : anchors) {

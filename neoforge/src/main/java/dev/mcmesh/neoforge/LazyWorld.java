@@ -46,6 +46,7 @@ final class LazyWorld {
     private final int backdateSec;
     private final ReentrantLock lock = new ReentrantLock();
     private final Map<String, List<RevisionFiles.Chunk>> pending;
+    private final java.util.concurrent.ConcurrentLinkedDeque<String> priority = new java.util.concurrent.ConcurrentLinkedDeque<>();
     private volatile boolean closed;
     private int done;
     private final int total;
@@ -139,6 +140,15 @@ final class LazyWorld {
         Files.move(tmp, stateFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
     }
 
+    /** Regions to fetch before the background order: where players are and where they are heading. */
+    void prefetch(java.util.List<String> keys) {
+        for (String k : keys) {
+            if (pending.containsKey(k) && !priority.contains(k)) {
+                priority.addLast(k);
+            }
+        }
+    }
+
     /** Called by the region storage before it opens any region file. Blocks until the region is on disk. */
     void guard(String dim, int cx, int cz) {
         String key = LazyPlan.regionKey(dim, cx, cz);
@@ -223,7 +233,11 @@ final class LazyWorld {
                 String next;
                 lock.lock();
                 try {
-                    next = pending.isEmpty() ? null : pending.keySet().iterator().next();
+                    String hot;
+                    while ((hot = priority.pollFirst()) != null && !pending.containsKey(hot)) {
+                        // already fetched by the game
+                    }
+                    next = hot != null ? hot : pending.isEmpty() ? null : pending.keySet().iterator().next();
                 } finally {
                     lock.unlock();
                 }

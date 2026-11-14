@@ -123,6 +123,24 @@ public final class MeshEvents {
         }
     }
 
+    private static final java.util.Map<java.util.UUID, int[]> LAST_CHUNK = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @SubscribeEvent
+    public static void lazyPrefetch(ServerTickEvent.Post e) {
+        LazyWorld w = LazyWorld.active;
+        if (w == null || e.getServer().getTickCount() % 40 != 0) {
+            return;
+        }
+        for (var p : e.getServer().getPlayerList().getPlayers()) {
+            int cx = p.blockPosition().getX() >> 4;
+            int cz = p.blockPosition().getZ() >> 4;
+            int[] last = LAST_CHUNK.put(p.getUUID(), new int[] {cx, cz});
+            int dx = last == null ? 0 : cx - last[0];
+            int dz = last == null ? 0 : cz - last[1];
+            w.prefetch(dev.mcmesh.core.LazyPlan.prefetchKeys(p.level().dimension().location().toString(), cx, cz, dx, dz));
+        }
+    }
+
     @SubscribeEvent
     public static void banOnLogin(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent e) {
         if (MeshService.current() != null && e.getEntity() instanceof net.minecraft.server.level.ServerPlayer p) {
