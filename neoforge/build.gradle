@@ -40,6 +40,12 @@ tasks.register('importWorld', JavaExec) {
     jvmArgs '-Xmx3g'
 }
 
+tasks.register('determinism', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dev.mcmesh.neoforge.DeterminismTool'
+    args = (project.findProperty('toolArgs') ?: '').toString().split(' ').findAll { it }
+}
+
 tasks.register('exportWorld', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'dev.mcmesh.neoforge.ExportTool'

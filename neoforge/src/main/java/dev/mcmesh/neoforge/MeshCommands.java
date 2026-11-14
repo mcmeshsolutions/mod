@@ -86,6 +86,9 @@ public final class MeshCommands {
                     });
                     return 1;
                 })));
+        if (Boolean.getBoolean("mcmesh.research")) {
+            ResearchCommands.register(d);
+        }
         d.register(Commands.literal("meshreport")
                 .requires(s -> s.getPlayer() != null && MeshService.current() != null && MeshConfig.REPORT_CHAT_LINES.get() > 0)
                 .then(Commands.literal("chat").then(Commands.argument("player", StringArgumentType.word())
