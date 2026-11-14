@@ -54,7 +54,7 @@ public final class MeshService {
     private final AuxSync aux = new AuxSync();
     /** Set once the world matches the gateway revision; null before that. */
     private volatile RegionScan regions;
-    private boolean closed;
+    private volatile boolean closed;
     private Thread exitHook;
 
     private MeshService(GatewayClient gw, Lease lease) throws java.io.IOException {
@@ -190,7 +190,7 @@ public final class MeshService {
         s.startSigner(token);
         s.session.start();
         // a quit that skips the normal server stop (SIGTERM, System.exit) must still hand the world back instead of leaving guests waiting for lease expiry
-        s.exitHook = new Thread(s::shutdown, "mesh-exit");
+        s.exitHook = new Thread(s::shutdownAfterServerStop, "mesh-exit");
         Runtime.getRuntime().addShutdownHook(s.exitHook);
         try {
             try {
@@ -267,10 +267,22 @@ public final class MeshService {
     /** Opens the tunnel and announces the server once it accepts connections. */
     public void activate() throws Exception {
         probeProof();
-        tunnel.connect(lease, token);
-        tunnelUp = true;
-        LOG.info("tunnel up to {}:{}", MeshConfig.RELAY_HOST.get(), MeshConfig.RELAY_PORT.get());
-        Thread.ofVirtual().name("mesh-tunnel").start(this::keepTunnel);
+        boolean connected = true;
+        try {
+            tunnel.connect(lease, token);
+        } catch (java.io.IOException e) {
+            // an unreachable relay must not switch off autosaves, load shedding and the final save: the host holds the lease and the
+            // world is playable locally, so only guests are affected. The tunnel is redialled below.
+            connected = false;
+            LOG.warn("the relay at {}:{} is not reachable ({}). Guests cannot join yet; hosting and saving go on and the tunnel is retried",
+                    MeshConfig.RELAY_HOST.get(), MeshConfig.RELAY_PORT.get(), e.toString());
+        }
+        tunnelUp = connected;
+        if (connected) {
+            LOG.info("tunnel up to {}:{}", MeshConfig.RELAY_HOST.get(), MeshConfig.RELAY_PORT.get());
+        }
+        boolean first = connected;
+        Thread.ofVirtual().name("mesh-tunnel").start(() -> keepTunnel(first));
         gw.hostReady(lease.id(), lease.epoch());
         current = this;
         Thread.ofVirtual().name("mesh-crash-report").start(this::reportPreviousCrash);
@@ -309,17 +321,21 @@ public final class MeshService {
     }
 
     /** A dead tunnel silently strands every guest, so redial until the lease ends. */
-    private void keepTunnel() {
+    private void keepTunnel(boolean connected) {
         long backoff = 1_000;
+        boolean running = connected;
         while (true) {
-            try {
-                tunnel.run();
-                tunnelUp = false;
-                LOG.warn("tunnel closed");
-            } catch (java.io.IOException e) {
-                tunnelUp = false;
-                LOG.warn("tunnel ended: {}", e.toString());
+            if (running) {
+                try {
+                    tunnel.run();
+                    tunnelUp = false;
+                    LOG.warn("tunnel closed");
+                } catch (java.io.IOException e) {
+                    tunnelUp = false;
+                    LOG.warn("tunnel ended: {}", e.toString());
+                }
             }
+            running = true;
             while (!closed && !fenced) {
                 try {
                     Thread.sleep(backoff);
@@ -384,6 +400,26 @@ public final class MeshService {
     }
 
     /** Final upload, last commit and lease release. */
+    /**
+     * The JVM exit hook (SIGTERM, a service manager stopping the process). Vanilla's own stop saves the world and then reaches
+     * {@link #shutdown()} through the server stopped event; running the final commit before that would miss everything the
+     * stop is about to write. So the server gets a head start, and only a stop that never arrives (hung or crashed server) is
+     * committed from here after the grace period.
+     */
+    private void shutdownAfterServerStop() {
+        long until = System.currentTimeMillis() + SERVER_STOP_GRACE_MS;
+        while (!closed && System.currentTimeMillis() < until) {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                break;
+            }
+        }
+        shutdown();
+    }
+
+    private static final long SERVER_STOP_GRACE_MS = 45_000;
+
     public synchronized void shutdown() {
         if (closed) {
             return;
