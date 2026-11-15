@@ -544,6 +544,18 @@ public final class GatewayClient {
     public record WorldgenClaim(long tile, String world, String dim, int x, int z, int size, int halo, int genVersion, String seed, String profile, String role) { }
 
     /** Asks for a tile to work on, or null when nothing fits this profile. A claim lasts 30 minutes; asking again resumes it. */
+    public record WorldgenDemand(String seed, String profile) { }
+
+    /** Seeds of queued tiles this device could work on; a worker needs the seed before it starts a server. */
+    public java.util.List<WorldgenDemand> worldgenDemand() throws IOException, GatewayException {
+        byte[] r = exec("/v1/worldgen/demand", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
+        java.util.List<WorldgenDemand> out = new java.util.ArrayList<>();
+        for (JsonElement e : JsonParser.parseString(new String(r)).getAsJsonObject().getAsJsonArray("demand")) {
+            out.add(new WorldgenDemand(e.getAsJsonObject().get("seed").getAsString(), e.getAsJsonObject().get("profile").getAsString()));
+        }
+        return out;
+    }
+
     public WorldgenClaim worldgenClaim(String profile) throws IOException, GatewayException {
         JsonObject b = new JsonObject();
         b.addProperty("profile", profile);

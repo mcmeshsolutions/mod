@@ -51,9 +51,14 @@ final class TileWorker {
             GatewayClient gw = new GatewayClient(MeshConfig.API_URL.get(), token);
             String profile = WorldgenProfile.of(server);
             LOG.info("tile worker up, profile {} from {}", profile, WorldgenProfile.describe());
+            int idle = 0;
+            int idleLimit = Integer.getInteger("mcmesh.worker.idleRounds", Integer.MAX_VALUE);
             while (server.isRunning()) {
                 GatewayClient.WorldgenClaim c = gw.worldgenClaim(profile);
                 if (c == null) {
+                    if (++idle > idleLimit) {
+                        break;
+                    }
                     Thread.sleep(IDLE_MS);
                     continue;
                 }

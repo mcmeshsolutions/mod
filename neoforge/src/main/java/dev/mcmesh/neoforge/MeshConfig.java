@@ -22,6 +22,8 @@ public final class MeshConfig {
     public static final ModConfigSpec.BooleanValue ANCHOR_STANDBY;
     public static final ModConfigSpec.BooleanValue ANCHOR_WAKE_ON_JOIN;
     public static final ModConfigSpec.BooleanValue GUEST_WARM_SYNC;
+    public static final ModConfigSpec.BooleanValue CONTRIBUTE_WORLDGEN;
+    public static final ModConfigSpec.ConfigValue<String> WORKER_HEAP;
     public static final ModConfigSpec.IntValue ANCHOR_IDLE_MINUTES;
     public static final ModConfigSpec.IntValue CHAT_RETENTION_DAYS;
     public static final ModConfigSpec.IntValue REPORT_CHAT_LINES;
@@ -64,6 +66,8 @@ public final class MeshConfig {
         ANCHOR_STANDBY = b.comment("dedicated server only: when another machine is hosting the world, wait for it to become free instead of refusing to start (anchor node, restart it with systemd)").define("anchorStandby", false);
         ANCHOR_WAKE_ON_JOIN = b.comment("anchor only: do not take the world just because it is free, wait until someone tries to play it, and hand it back after anchorIdleMinutes with nobody on. Keeps a modded world from running all night for nobody. Needs a gateway that answers GET /v1/worlds/<id>/demand").define("anchorWakeOnJoin", false);
         GUEST_WARM_SYNC = b.comment("client only, off until tested on real machines: while playing as a guest, keep this machine's copy of the world synced to the newest revision (about every 30 s, incremental), so a takeover of hosting from this machine fetches only the last changes instead of the whole world. Costs bandwidth and disk while playing; the first run downloads the whole world").define("guestWarmSync", false);
+        CONTRIBUTE_WORLDGEN = b.comment("client only, off until tested on real machines: while this machine is not hosting, generate worldgen tiles for a host that asked for them, in a hidden low priority server process started from this game (one tile per process, stopped when you start hosting). Needs the world owner to have turned distributed worldgen on").define("contributeWorldgen", false);
+        WORKER_HEAP = b.comment("memory for the hidden worldgen worker, for example 3G").define("workerHeap", "3G");
         ANCHOR_IDLE_MINUTES = b.comment("anchor with wake on join: minutes with no players before the world is saved and handed back, so the machine goes idle. 0 keeps it up forever").defineInRange("anchorIdleMinutes", 10, 0, 1440);
         CHAT_RETENTION_DAYS = b.comment("while hosting, keep player chat in logs/mesh-chat (one file per day, on this machine only, never uploaded) for this many days so the owner can read it when a report comes in. 0 keeps nothing and deletes what was kept. Players are not told by the game, say so in your rules").defineInRange("chatRetentionDays", 0, 0, 90);
         REPORT_CHAT_LINES = b.comment("while hosting, remember the last N chat lines in memory only (never written to disk) so a player can run /meshreport chat <player> <reason> and attach them for the world owner. 0 turns the memory and the command off").defineInRange("reportChatLines", 20, 0, 100);

@@ -18,6 +18,7 @@ public final class ClientHooks {
 
     @SubscribeEvent
     public static void init(ScreenEvent.Init.Post e) {
+        WorkerPool.ensureStarted();
         if (e.getScreen() instanceof net.minecraft.client.gui.screens.multiplayer.JoinMultiplayerScreen m) {
             e.addListener(Button.builder(Component.literal("Shared Worlds"), b -> Minecraft.getInstance().setScreen(new SyncedWorldsScreen(m)))
                     .bounds(m.width - 104, 6, 100, 20).build());
