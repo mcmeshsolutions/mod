@@ -33,6 +33,9 @@ final class TileGen {
     static Result generate(ServerLevel level, int x1, int z1, int x2, int z2, IntConsumer progress) {
         long t0 = System.nanoTime();
         var cache = level.getChunkSource();
+        if (Boolean.getBoolean("mcmesh.gen.sequential")) {
+            return generateInOrder(level, x1, z1, x2, z2, progress, t0);
+        }
         List<CompletableFuture<ChunkResult<ChunkAccess>>> all = level.getServer().submit(() -> {
             level.getServer().tickRateManager().setFrozen(true);
             List<CompletableFuture<ChunkResult<ChunkAccess>>> out = new ArrayList<>();
@@ -54,6 +57,36 @@ final class TileGen {
             }
             if (total % 64 == 0) {
                 progress.accept((int) total);
+            }
+        }
+        return new Result(ok, total, (System.nanoTime() - t0) / 1_000_000);
+    }
+
+    /**
+     * One chunk at a time in a fixed order, each finished before the next is asked for. Slower, and only for finding out whether the
+     * order the game happens to schedule chunks in is what makes two runs differ (RESEARCH.md 1h); not what a worker runs unless told to.
+     */
+    private static Result generateInOrder(ServerLevel level, int x1, int z1, int x2, int z2, IntConsumer progress, long t0) {
+        var cache = level.getChunkSource();
+        level.getServer().submit(() -> level.getServer().tickRateManager().setFrozen(true)).join();
+        long ok = 0;
+        long total = 0;
+        for (int cx = x1; cx <= x2; cx++) {
+            for (int cz = z1; cz <= z2; cz++) {
+                final int fx = cx;
+                final int fz = cz;
+                CompletableFuture<ChunkResult<ChunkAccess>> f = level.getServer().submit(() -> {
+                    ChunkPos p = new ChunkPos(fx, fz);
+                    cache.addRegionTicket(HOLD, p, 0, p);
+                    return cache.getChunkFuture(fx, fz, ChunkStatus.FULL, true);
+                }).join();
+                total++;
+                if (f.join().isSuccess()) {
+                    ok++;
+                }
+                if (total % 64 == 0) {
+                    progress.accept((int) total);
+                }
             }
         }
         return new Result(ok, total, (System.nanoTime() - t0) / 1_000_000);

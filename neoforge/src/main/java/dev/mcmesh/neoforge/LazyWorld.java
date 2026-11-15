@@ -149,11 +149,26 @@ final class LazyWorld {
 
     /** Regions to fetch before the background order: where players are and where they are heading. */
     void prefetch(java.util.List<String> keys) {
+        // the order is by arrival time and changes as players move, so the last answer replaces the earlier ones
+        priority.clear();
         for (String k : keys) {
-            if (pending.containsKey(k) && !priority.contains(k)) {
+            if (pending.containsKey(k)) {
                 priority.addLast(k);
             }
         }
+    }
+
+    /** Seconds a region took to fetch, smoothed over the last ones; 0 until one has. */
+    private volatile double fetchSeconds;
+
+    private void noteFetch(double s) {
+        double f = fetchSeconds;
+        fetchSeconds = f == 0 ? s : 0.7 * f + 0.3 * s;
+    }
+
+    /** How far ahead of a player to fetch: about four fetches and a margin, so the next few regions are there before they are needed. */
+    double horizonS() {
+        return Math.max(30, Math.min(600, 4 * fetchSeconds + 20));
     }
 
     /** Region keys still waiting on the gateway, for the island probe and the spatial debug view. */
@@ -184,7 +199,9 @@ final class LazyWorld {
             if (chunks == null) {
                 return;
             }
+            long began = System.nanoTime();
             materialize(key, chunks);
+            noteFetch((System.nanoTime() - began) / 1e9);
             pending.remove(key);
             persist();
             done++;

@@ -21,6 +21,48 @@ public final class WorldgenPlanner {
 
     private WorldgenPlanner() { }
 
+    /** A tile to ask for and the seconds the host expects to have before a player needs it. */
+    public record Planned(WorldgenTiles.Tile tile, long etaS) { }
+
+    /**
+     * The tiles worth asking workers for, by when they are needed. A tile is wanted when a player's loaded area will reach it within
+     * {@code horizonS} (further than that is work spent too early, the player may turn) and not sooner than {@code minEtaS} (a
+     * tile no worker can deliver in time is left to the host, which generates it when it is needed exactly as it always did).
+     * Soonest first. The arrival time is the earliest over all players.
+     */
+    public static List<Planned> planByArrival(List<Arrival.Mover> movers, double loadBlocks, int regionsAhead, double horizonS, double minEtaS, int max,
+            BiPredicate<Integer, Integer> taken) {
+        Map<Long, Double> best = new HashMap<>();
+        for (Arrival.Mover m : movers) {
+            if (!DIM.equals(m.dim())) {
+                continue;
+            }
+            int pr = (int) Math.floor(m.x() / Arrival.REGION_BLOCKS);
+            int pz = (int) Math.floor(m.z() / Arrival.REGION_BLOCKS);
+            for (int rx = pr - regionsAhead; rx <= pr + regionsAhead; rx++) {
+                for (int rz = pz - regionsAhead; rz <= pz + regionsAhead; rz++) {
+                    double eta = Arrival.regionEta(m, loadBlocks, rx, rz);
+                    if (eta < minEtaS || eta > horizonS || taken.test(rx, rz)) {
+                        continue;
+                    }
+                    best.merge(((long) rx << 32) | (rz & 0xFFFFFFFFL), eta, Math::min);
+                }
+            }
+        }
+        List<Map.Entry<Long, Double>> sorted = new ArrayList<>(best.entrySet());
+        sorted.sort(Comparator.<Map.Entry<Long, Double>>comparingDouble(Map.Entry::getValue).thenComparingLong(Map.Entry::getKey));
+        List<Planned> out = new ArrayList<>();
+        for (var e : sorted) {
+            if (out.size() >= max) {
+                break;
+            }
+            int rx = (int) (e.getKey() >> 32);
+            int rz = (int) (long) e.getKey();
+            out.add(new Planned(new WorldgenTiles.Tile(DIM, rx * WorldgenTiles.MIN_SIZE, rz * WorldgenTiles.MIN_SIZE, WorldgenTiles.MIN_SIZE), (long) Math.ceil(e.getValue())));
+        }
+        return out;
+    }
+
     /**
      * @param regionsAhead how far from a player to plan, in regions
      * @param skipNear     regions this close (Chebyshev) to a player are left to the host, which needs them sooner than a worker can deliver

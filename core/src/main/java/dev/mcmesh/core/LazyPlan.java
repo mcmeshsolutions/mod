@@ -56,6 +56,36 @@ public final class LazyPlan {
         return List.copyOf(out);
     }
 
+    /**
+     * The pending regions the players will reach soonest, nearest in time first, only those within {@code horizonS}. A region a player's
+     * loaded area already touches comes first with an arrival of 0.
+     */
+    public static List<String> byArrival(List<Arrival.Mover> movers, java.util.Collection<String> pendingKeys, double loadBlocks, double horizonS) {
+        Map<String, Double> best = new LinkedHashMap<>();
+        for (String key : pendingKeys) {
+            String[] k = key.split("\\|");
+            if (k.length != 3) {
+                continue;
+            }
+            int rx = Integer.parseInt(k[1]);
+            int rz = Integer.parseInt(k[2]);
+            for (Arrival.Mover m : movers) {
+                if (!m.dim().equals(k[0])) {
+                    continue;
+                }
+                double eta = Arrival.regionEta(m, loadBlocks, rx, rz);
+                if (eta <= horizonS) {
+                    best.merge(key, eta, Math::min);
+                }
+            }
+        }
+        List<Map.Entry<String, Double>> sorted = new ArrayList<>(best.entrySet());
+        sorted.sort(java.util.Map.Entry.<String, Double>comparingByValue().thenComparing(Map.Entry.comparingByKey()));
+        List<String> out = new ArrayList<>();
+        sorted.forEach(e -> out.add(e.getKey()));
+        return out;
+    }
+
     public static Set<String> eagerRegions(List<RevisionFiles.Chunk> chunks, List<Anchor> anchors, int radius, int smallDimChunks) {
         Set<String> eager = new TreeSet<>();
         for (Anchor a : anchors) {

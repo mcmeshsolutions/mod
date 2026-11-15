@@ -168,13 +168,21 @@ public final class MeshEvents {
         if (w == null || e.getServer().getTickCount() % 40 != 0) {
             return;
         }
+        long now = System.currentTimeMillis();
         for (var p : e.getServer().getPlayerList().getPlayers()) {
-            int cx = p.blockPosition().getX() >> 4;
-            int cz = p.blockPosition().getZ() >> 4;
-            int[] last = LAST_CHUNK.put(p.getUUID(), new int[] {cx, cz});
-            int dx = last == null ? 0 : cx - last[0];
-            int dz = last == null ? 0 : cz - last[1];
-            w.prefetch(dev.mcmesh.core.LazyPlan.prefetchKeys(p.level().dimension().location().toString(), cx, cz, dx, dz));
+            LAZY_TRACK.update(p.getStringUUID(), p.level().dimension().location().toString(), p.getX(), p.getZ(), now);
+        }
+        // regions in the order the players will reach them, as far ahead as it takes to fetch a few of them
+        double loadBlocks = Math.max(e.getServer().getPlayerList().getViewDistance(), e.getServer().getPlayerList().getSimulationDistance()) * 16.0 + 32;
+        w.prefetch(dev.mcmesh.core.LazyPlan.byArrival(LAZY_TRACK.movers(), w.pendingKeys(), loadBlocks, w.horizonS()));
+    }
+
+    private static final dev.mcmesh.core.Arrival.Track LAZY_TRACK = new dev.mcmesh.core.Arrival.Track();
+
+    @SubscribeEvent
+    public static void tileSample(ServerTickEvent.Post e) {
+        if (e.getServer().getTickCount() % 100 == 0 && MeshService.current() != null) {
+            TileHost.sample(e.getServer());
         }
     }
 

@@ -583,6 +583,26 @@ public final class GatewayClient {
     }
 
     /** The host asks for tiles, each given as the south-west chunk [x, z] of a region. Returns how many were new. */
+    /** As above, with the seconds the host expects to have before a player needs each tile (same order as tiles). */
+    public int worldgenRequest(String world, String profile, String seed, String dim, java.util.List<int[]> tiles, java.util.List<Long> etaSeconds) throws IOException, GatewayException {
+        JsonObject b = new JsonObject();
+        b.addProperty("profile", profile);
+        b.addProperty("seed", seed);
+        b.addProperty("dim", dim);
+        com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+        for (int[] t : tiles) {
+            com.google.gson.JsonArray p = new com.google.gson.JsonArray();
+            p.add(t[0]);
+            p.add(t[1]);
+            a.add(p);
+        }
+        b.add("tiles", a);
+        com.google.gson.JsonArray e = new com.google.gson.JsonArray();
+        etaSeconds.forEach(e::add);
+        b.add("eta_s", e);
+        return post("/v1/worlds/" + world + "/worldgen/tiles", b).get("queued").getAsInt();
+    }
+
     public int worldgenRequest(String world, String profile, String seed, String dim, java.util.List<int[]> tiles) throws IOException, GatewayException {
         JsonObject b = new JsonObject();
         b.addProperty("profile", profile);

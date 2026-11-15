@@ -32,6 +32,7 @@ public final class TileTool {
             case "selftest" -> System.exit(TileSelfTest.run());
             case "census" -> census(Path.of(a[1]));
             case "normdiff" -> normdiff(Path.of(a[1]), Path.of(a[2]));
+            case "chunkdiff" -> chunkdiff(Path.of(a[1]), Path.of(a[2]), Integer.parseInt(a[3]), Integer.parseInt(a[4]));
             case "entity-diff" -> entityDiff(Path.of(a[1]), Path.of(a[2]), Integer.parseInt(a[3]), Integer.parseInt(a[4]));
             default -> throw new IllegalArgumentException("install <src> <dst> x1 z1 x2 z2 | compare <a> <b> x1 z1 x2 z2 rings");
         }
@@ -84,6 +85,48 @@ public final class TileTool {
     }
 
     /** What a world actually holds that has to be ticked: block entities and entities by type, and where they cluster. */
+    /** Where two stored copies of one chunk differ: the path inside the tag of every difference, up to 40. */
+    private static void chunkdiff(Path a, Path b, int cx, int cz) throws IOException {
+        try (RegionIo ia = new RegionIo(a.resolve("world")); RegionIo ib = new RegionIo(b.resolve("world"))) {
+            for (String kind : new String[] {"region", "entities", "poi"}) {
+                CompoundTag x = ia.read(kind, cx, cz);
+                CompoundTag y = ib.read(kind, cx, cz);
+                System.out.println(kind + ": " + (x == null ? "missing in A" : y == null ? "missing in B" : x.equals(y) ? "identical" : "differs"));
+                if (x != null && y != null && !x.equals(y)) {
+                    List<String> out = new ArrayList<>();
+                    walk("", x, y, out);
+                    out.stream().limit(40).forEach(l -> System.out.println("  " + l));
+                    System.out.println("  (" + out.size() + " differences)");
+                }
+            }
+        }
+    }
+
+    private static void walk(String path, net.minecraft.nbt.Tag x, net.minecraft.nbt.Tag y, List<String> out) {
+        if (x == null || y == null || x.getId() != y.getId()) {
+            out.add(path + ": " + (x == null ? "absent" : "present") + " vs " + (y == null ? "absent" : "present"));
+        } else if (x instanceof CompoundTag cx) {
+            CompoundTag cy = (CompoundTag) y;
+            java.util.TreeSet<String> keys = new java.util.TreeSet<>(cx.getAllKeys());
+            keys.addAll(cy.getAllKeys());
+            for (String k : keys) {
+                walk(path + "/" + k, cx.get(k), cy.get(k), out);
+            }
+        } else if (x instanceof ListTag lx) {
+            ListTag ly = (ListTag) y;
+            if (lx.size() != ly.size()) {
+                out.add(path + ": list of " + lx.size() + " vs " + ly.size());
+            }
+            for (int i = 0; i < Math.min(lx.size(), ly.size()); i++) {
+                walk(path + "[" + i + "]", lx.get(i), ly.get(i), out);
+            }
+        } else if (!x.equals(y)) {
+            String sx = x.toString();
+            String sy = y.toString();
+            out.add(path + ": " + (sx.length() > 80 ? sx.substring(0, 80) + "..." : sx) + " vs " + (sy.length() > 80 ? sy.substring(0, 80) + "..." : sy));
+        }
+    }
+
     /** Chunks of B against A: identical, different only in LastUpdate and InhabitedTime (a save that changed nothing), or really different. */
     private static void normdiff(Path a, Path b) throws IOException {
         int same = 0;
@@ -216,6 +259,7 @@ public final class TileTool {
         List<byte[]> da = new ArrayList<>();
         List<byte[]> db = new ArrayList<>();
         String example = null;
+        List<String> all = new ArrayList<>();
         try (RegionIo wa = new RegionIo(a.resolve("world")); RegionIo wb = new RegionIo(b.resolve("world"))) {
             for (int cx = r[0]; cx <= r[2]; cx++) {
                 for (int cz = r[1]; cz <= r[3]; cz++) {
@@ -238,6 +282,7 @@ public final class TileTool {
                         continue;
                     }
                     different++;
+                    all.add(cx + "," + cz);
                     String why = !CanonicalChunk.region(ra).equals(CanonicalChunk.region(rb)) ? "terrain" : !CanonicalChunk.entities(ea).equals(CanonicalChunk.entities(eb)) ? "entities" : "poi";
                     parts.merge(why, 1, Integer::sum);
                     if (example == null) {
@@ -247,6 +292,9 @@ public final class TileTool {
             }
         }
         System.out.println("canonical digests: " + same + " same, " + different + " different, " + missing + " chunks missing on a side; differing part " + parts);
+        if (!all.isEmpty()) {
+            System.out.println("differing chunks: " + String.join(" ", all.subList(0, Math.min(all.size(), 40))));
+        }
         if (example != null) {
             System.out.println("first differing chunk: " + example);
         }

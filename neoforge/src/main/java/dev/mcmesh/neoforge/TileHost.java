@@ -59,23 +59,20 @@ final class TileHost {
         if (!enabled() || busy) {
             return;
         }
-        List<WorldgenPlanner.Player> players = new ArrayList<>();
-        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-            var v = p.getDeltaMovement();
-            players.add(new WorldgenPlanner.Player(p.level().dimension().location().toString(), p.chunkPosition().x, p.chunkPosition().z, v.x, v.z));
-        }
+        sample(server);
+        double loadBlocks = Math.max(server.getPlayerList().getViewDistance(), server.getPlayerList().getSimulationDistance()) * 16.0 + 32;
         // research and the end to end run: a player who is not there
         String fake = System.getProperty("mcmesh.worldgen.fakeplayer");
         if (fake != null) {
             String[] xz = fake.split(",");
-            players.add(new WorldgenPlanner.Player(WorldgenPlanner.DIM, Integer.parseInt(xz[0].trim()), Integer.parseInt(xz[1].trim()), 0, 0));
+            TRACK.pin("fake", WorldgenPlanner.DIM, Integer.parseInt(xz[0].trim()) * 16.0 + 8, Integer.parseInt(xz[1].trim()) * 16.0 + 8);
         }
         String seed = Long.toString(server.getWorldData().worldGenOptions().seed());
         String profile = WorldgenProfile.of(server);
         busy = true;
         Thread.ofVirtual().name("mesh-tilehost").start(() -> {
             try {
-                round(s, players, profile, seed);
+                round(s, TRACK.movers(), loadBlocks, profile, seed);
             } catch (GatewayException e) {
                 if (e.code.equals("WORLDGEN_OFF")) {
                     off = true;
@@ -91,22 +88,45 @@ final class TileHost {
         });
     }
 
-    private static void round(MeshService s, List<WorldgenPlanner.Player> players, String profile, String seed) throws Exception {
+    static final dev.mcmesh.core.Arrival.Track TRACK = new dev.mcmesh.core.Arrival.Track();
+
+    /** Remembers where the players are, to know how fast and which way they are going. Called about every five seconds while hosting. */
+    static void sample(MinecraftServer server) {
+        long now = System.currentTimeMillis();
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            TRACK.update(p.getStringUUID(), p.level().dimension().location().toString(), p.getX(), p.getZ(), now);
+        }
+    }
+
+    private static void round(MeshService s, List<dev.mcmesh.core.Arrival.Mover> movers, double loadBlocks, String profile, String seed) throws Exception {
         GatewayClient gw = s.gateway();
         String world = s.worldId();
         Path root = s.worldRoot();
         // what is still queued counts against the limit, or every round would pile eight more on top
-        JsonObject counts = gw.worldgenState(world).getAsJsonObject("tiles");
+        JsonObject state = gw.worldgenState(world);
+        JsonObject counts = state.getAsJsonObject("tiles");
         int outstanding = counts.has("queued") ? counts.get("queued").getAsInt() : 0;
-        var planned = WorldgenPlanner.plan(players, REGIONS_AHEAD, SKIP_NEAR, Math.max(0, PER_ROUND - outstanding), (rx, rz) -> asked.contains(rx + "," + rz) || !TileInstall.requestable(root, rx, rz));
+        // how far ahead to ask follows how long the workers really take: twice the median tile time and a minute, and nothing that the
+        // fastest worker could not deliver before a player gets there (the host makes that one itself, as it always did)
+        double horizonS = 600;
+        double minEtaS = 30;
+        if (state.has("pool") && state.get("pool").isJsonObject()) {
+            JsonObject pool = state.getAsJsonObject("pool");
+            horizonS = Math.max(120, Math.min(1800, 2 * pool.get("median_s").getAsDouble() + 60));
+            minEtaS = Math.max(10, pool.get("fastest_s").getAsDouble() * 1.3);
+        }
+        var planned = WorldgenPlanner.planByArrival(movers, loadBlocks, REGIONS_AHEAD, horizonS, minEtaS, Math.max(0, PER_ROUND - outstanding),
+                (rx, rz) -> asked.contains(rx + "," + rz) || !TileInstall.requestable(root, rx, rz));
         if (!planned.isEmpty()) {
             List<int[]> tiles = new ArrayList<>();
-            for (WorldgenTiles.Tile t : planned) {
-                tiles.add(new int[] {t.x(), t.z()});
+            List<Long> etas = new ArrayList<>();
+            for (WorldgenPlanner.Planned p : planned) {
+                tiles.add(new int[] {p.tile().x(), p.tile().z()});
+                etas.add(p.etaS());
             }
-            int queued = gw.worldgenRequest(world, profile, seed, WorldgenPlanner.DIM, tiles);
-            planned.forEach(t -> asked.add((t.x() >> 5) + "," + (t.z() >> 5)));
-            LOG.info("worldgen: asked for {} tiles, {} new", tiles.size(), queued);
+            int queued = gw.worldgenRequest(world, profile, seed, WorldgenPlanner.DIM, tiles, etas);
+            planned.forEach(p -> asked.add((p.tile().x() >> 5) + "," + (p.tile().z() >> 5)));
+            LOG.info("worldgen: asked for {} tiles, {} new, the nearest needed in {} s (horizon {} s, nothing sooner than {} s)", tiles.size(), queued, etas.get(0), Math.round(horizonS), Math.round(minEtaS));
         }
         JsonObject r = gw.worldgenTiles(world);
         for (JsonElement e : r.getAsJsonArray("refused")) {
