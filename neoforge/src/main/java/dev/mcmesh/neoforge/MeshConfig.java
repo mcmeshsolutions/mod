@@ -22,6 +22,8 @@ public final class MeshConfig {
     public static final ModConfigSpec.BooleanValue ANCHOR_STANDBY;
     public static final ModConfigSpec.BooleanValue ANCHOR_WAKE_ON_JOIN;
     public static final ModConfigSpec.BooleanValue GUEST_WARM_SYNC;
+    public static final ModConfigSpec.BooleanValue SHARD_STANDBY;
+    public static final ModConfigSpec.BooleanValue SHARD_OFFERS;
     public static final ModConfigSpec.BooleanValue CONTRIBUTE_WORLDGEN;
     public static final ModConfigSpec.ConfigValue<String> WORKER_HEAP;
     public static final ModConfigSpec.IntValue ANCHOR_IDLE_MINUTES;
@@ -65,6 +67,8 @@ public final class MeshConfig {
         SHIP_LOGS = b.comment("send latest.log to the gateway operator once logged in, for debugging, off by default because logs can contain private details").define("shipLogs", false);
         ANCHOR_STANDBY = b.comment("dedicated server only: when another machine is hosting the world, wait for it to become free instead of refusing to start (anchor node, restart it with systemd)").define("anchorStandby", false);
         ANCHOR_WAKE_ON_JOIN = b.comment("anchor only: do not take the world just because it is free, wait until someone tries to play it, and hand it back after anchorIdleMinutes with nobody on. Keeps a modded world from running all night for nobody. Needs a gateway that answers GET /v1/worlds/<id>/demand").define("anchorWakeOnJoin", false);
+        SHARD_STANDBY = b.comment("dedicated server only, experimental: instead of hosting the world, wait for the machine that hosts it to set regions aside and host just those (a shard). Needs its own level-name: the folder is wiped and refilled with only the shard's regions").define("shardStandby", false);
+        SHARD_OFFERS = b.comment("host only, experimental: allow the op command /meshshard to give regions of this world to a machine that waits as a shard host").define("shardOffers", false);
         GUEST_WARM_SYNC = b.comment("client only, off until tested on real machines: while playing as a guest, keep this machine's copy of the world synced to the newest revision (about every 30 s, incremental), so a takeover of hosting from this machine fetches only the last changes instead of the whole world. Costs bandwidth and disk while playing; the first run downloads the whole world").define("guestWarmSync", false);
         CONTRIBUTE_WORLDGEN = b.comment("client only, off until tested on real machines: while this machine is not hosting, generate worldgen tiles for a host that asked for them, in a hidden low priority server process started from this game (one tile per process, stopped when you start hosting). Needs the world owner to have turned distributed worldgen on").define("contributeWorldgen", false);
         WORKER_HEAP = b.comment("memory for the hidden worldgen worker, for example 3G").define("workerHeap", "3G");

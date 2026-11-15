@@ -15,6 +15,7 @@ public final class LazyGate {
         if (dim == null) {
             return;
         }
+        Ownership.touchedForeign(dim, cx, cz);
         // a region the game has opened is never written to by a tile install, so it is recorded before the game gets in
         if (dim.equals("minecraft:overworld")) {
             TileInstall.touch(cx >> 5, cz >> 5);

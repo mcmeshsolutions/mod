@@ -49,7 +49,9 @@ final class LazyWorld {
     private final java.util.concurrent.ConcurrentLinkedDeque<String> priority = new java.util.concurrent.ConcurrentLinkedDeque<>();
     private volatile boolean closed;
     private int done;
-    private final int total;
+    private int total;
+    /** The revision the pending regions belong to, when it is not the one the world's marker names (regions taken back from a shard). */
+    private volatile String stateRev;
     /** Pending regions hold only the changed chunks and are patched into the files on disk; otherwise they hold a whole region and replace it. */
     private final boolean patch;
 
@@ -83,6 +85,43 @@ final class LazyWorld {
             LOG.warn("unreadable lazy state {}: {}", f, e.toString());
             return List.of();
         }
+    }
+
+    /** The revision the saved pending regions must be fetched from, or null when it is the marker's. */
+    static String savedRev(Path root) {
+        try {
+            Path f = stateFile(root);
+            if (!Files.isRegularFile(f)) {
+                return null;
+            }
+            var o = JsonParser.parseString(Files.readString(f, StandardCharsets.UTF_8)).getAsJsonObject();
+            return o.has("rev") ? o.get("rev").getAsString() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** True while some regions are still on the gateway. */
+    static boolean busy() {
+        LazyWorld w = active;
+        return w != null && !w.pending.isEmpty();
+    }
+
+    /**
+     * Regions the game must not read until they have been replaced by the gateway's copy (a shard's regions that came back), added to a
+     * world that is not in the middle of a lazy start. Returns false when one is still running: the caller tries again later.
+     */
+    static synchronized boolean adopt(GatewayClient gw, Path root, String rev, Map<String, List<RevisionFiles.Chunk>> regions, int backdateSec) throws IOException {
+        if (busy()) {
+            return false;
+        }
+        LazyWorld w = new LazyWorld(gw, root, regions, backdateSec, false);
+        w.stateRev = rev;
+        w.persist();
+        active = w;
+        LOG.info("taking back {} regions ({} chunks) from the gateway", regions.size(), regions.values().stream().mapToInt(List::size).sum());
+        w.startDrain();
+        return true;
     }
 
     static void clearState(Path root) throws IOException {
@@ -141,6 +180,9 @@ final class LazyWorld {
         JsonArray a = new JsonArray();
         pending.keySet().forEach(a::add);
         o.add("pending", a);
+        if (stateRev != null) {
+            o.addProperty("rev", stateRev);
+        }
         Files.createDirectories(stateFile.getParent());
         Path tmp = stateFile.resolveSibling(stateFile.getFileName() + ".tmp");
         Files.writeString(tmp, o.toString(), StandardCharsets.UTF_8);

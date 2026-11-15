@@ -262,6 +262,9 @@ public final class MeshEvents {
             if (e.getServer().getTickCount() % 600 == 300) {
                 TileHost.tick(e.getServer(), hosting);
             }
+            if (e.getServer().getTickCount() % 200 == 100 && MeshConfig.SHARD_OFFERS.get()) {
+                ShardMain.watch(e.getServer(), hosting);
+            }
         } else {
             LoadShed.restore(e.getServer());
         }

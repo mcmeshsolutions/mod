@@ -32,6 +32,16 @@ final class RegionScan {
         sinceSec = baselineMs / 1000 - 1;
     }
 
+    /** A region file named r.X.Z.mca belongs to this process unless it lies in someone else's part of the world. */
+    private static boolean ownsFile(String dim, Path f) {
+        String[] n = f.getFileName().toString().split("\\.");
+        try {
+            return Ownership.writes(dim, Integer.parseInt(n[1]) << 5, Integer.parseInt(n[2]) << 5);
+        } catch (RuntimeException e) {
+            return true;
+        }
+    }
+
     /** Returns how many chunks were handed to the uploader. Call after the server has flushed its chunks to disk. */
     int scan(Path root, ChunkUploader up) throws IOException {
         long started = System.currentTimeMillis() / 1000;
@@ -47,6 +57,9 @@ final class RegionScan {
                 }
                 try (Stream<Path> files = Files.list(folder)) {
                     for (Path f : (Iterable<Path>) files.filter(p -> p.getFileName().toString().endsWith(".mca"))::iterator) {
+                        if (!ownsFile(dim, f)) {
+                            continue;
+                        }
                         // a file nobody touched since the last scan has nothing new, and checking is one stat call
                         if (Files.getLastModifiedTime(f).toMillis() / 1000 < since - 2) {
                             continue;

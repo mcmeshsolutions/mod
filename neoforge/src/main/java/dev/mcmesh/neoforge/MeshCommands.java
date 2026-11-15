@@ -46,6 +46,31 @@ public final class MeshCommands {
                     refresh(c.getSource());
                     return 1;
                 }))));
+        d.register(Commands.literal("meshshard")
+                .requires(src -> canEdit(src) && MeshConfig.SHARD_OFFERS.get())
+                .then(Commands.literal("give")
+                        .then(Commands.argument("x1", com.mojang.brigadier.arguments.IntegerArgumentType.integer())
+                        .then(Commands.argument("z1", com.mojang.brigadier.arguments.IntegerArgumentType.integer())
+                        .then(Commands.argument("x2", com.mojang.brigadier.arguments.IntegerArgumentType.integer())
+                        .then(Commands.argument("z2", com.mojang.brigadier.arguments.IntegerArgumentType.integer()).executes(c -> {
+                            MeshService cur = MeshService.current();
+                            if (cur == null) {
+                                c.getSource().sendFailure(Component.literal("this server is not hosting a mesh world"));
+                                return 0;
+                            }
+                            var src = c.getSource();
+                            ShardMain.give(src.getServer(), cur, src.getLevel().dimension().location().toString(),
+                                    com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "x1"), com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "z1"),
+                                    com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "x2"), com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "z2"),
+                                    msg -> src.getServer().execute(() -> src.sendSuccess(() -> Component.literal(msg), true)));
+                            src.sendSuccess(() -> Component.literal("giving the regions away, this takes a few seconds"), false);
+                            return 1;
+                        }))))))
+                .then(Commands.literal("status").executes(c -> {
+                    var away = Ownership.away();
+                    c.getSource().sendSuccess(() -> Component.literal(away.isEmpty() ? "no regions are away" : away.size() + " region rectangles are away: " + away), false);
+                    return 1;
+                })));
         d.register(Commands.literal("meshstatus").executes(c -> {
             MeshService cur = MeshService.current();
             String mem = MemWatch.availableMb() < 0 ? "" : ", " + MemWatch.availableMb() + " MB system memory free";

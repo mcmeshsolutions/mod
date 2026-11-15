@@ -27,6 +27,8 @@ import org.slf4j.Logger;
 final class WorldSync {
     private static final Logger LOG = LogUtils.getLogger();
     static final String MARKER = "mcmesh.rev";
+    /** A folder that holds only the regions of one shard lease: never mistaken for a whole copy of the world. */
+    static final String SHARD_MARKER = "mcmesh.shard";
     private static final List<String> KINDS = List.of("region", "entities", "poi");
 
     private WorldSync() { }
@@ -51,7 +53,8 @@ final class WorldSync {
         Path marker = root.resolve(MARKER);
         String have = Files.exists(marker) ? Files.readString(marker).trim() : null;
         if (have != null && !LazyWorld.savedPending(root).isEmpty()) {
-            LazyWorld.completeFromState(gw, root, gw.listRevision(have));
+            String savedRev = LazyWorld.savedRev(root);
+            LazyWorld.completeFromState(gw, root, gw.listRevision(savedRev != null ? savedRev : have));
         }
         if (rev.equals(have)) {
             return false;
@@ -151,6 +154,54 @@ final class WorldSync {
             }
             SyncProgress.end();
         }
+    }
+
+    /**
+     * A shard host's world: wiped, then the extra files of the revision and only the chunks of its regions, with a spawn point of
+     * its own inside them so the game does not generate the spawn area of a world it owns none of. The folder is the shard's alone:
+     * it is refused when it holds an ordinary copy of the world, and the level.dat edit is local, a shard never uploads level.dat.
+     */
+    static void syncShard(GatewayClient gw, Path root, String rev, List<dev.mcmesh.core.ShardRegion> regions) throws Exception {
+        Path marker = root.resolve(SHARD_MARKER);
+        if (Files.exists(root) && !Files.exists(marker) && (Files.exists(root.resolve(MARKER)) || hasChunkData(root))) {
+            throw new IOException("refusing to turn " + root + " into a shard copy: it holds a normal world. Give the shard host its own level-name");
+        }
+        deleteTree(root);
+        Files.createDirectories(root);
+        RevisionFiles files = gw.listRevision(rev);
+        List<RevisionFiles.Chunk> mine = new java.util.ArrayList<>();
+        for (RevisionFiles.Chunk c : files.chunks()) {
+            if (dev.mcmesh.core.ShardRegion.any(regions, c.dim(), c.cx() >> 5, c.cz() >> 5)) {
+                mine.add(c);
+            }
+        }
+        Sink sink = new Sink(root);
+        try {
+            SyncProgress.begin();
+            int n = WorldDownloader.downloadParts(gw, mine, files.aux(), sink, SyncProgress::update);
+            LOG.info("shard copy of {}: {} files, {} of the {} chunks of the world", rev, n, mine.size(), files.chunks().size());
+        } finally {
+            sink.close();
+            SyncProgress.end();
+        }
+        localizeLevel(root, regions.get(0));
+        Files.writeString(marker, rev, StandardCharsets.UTF_8);
+    }
+
+    private static void localizeLevel(Path root, dev.mcmesh.core.ShardRegion first) throws IOException {
+        Path level = root.resolve("level.dat");
+        if (!Files.isRegularFile(level)) {
+            return;
+        }
+        var tag = net.minecraft.nbt.NbtIo.readCompressed(level, net.minecraft.nbt.NbtAccounter.unlimitedHeap());
+        var data = tag.getCompound("Data");
+        data.putInt("SpawnX", first.centerBlockX());
+        data.putInt("SpawnZ", first.centerBlockZ());
+        // no spawn chunks: they would keep a region loaded that this host does not own
+        var rules = data.contains("GameRules", 10) ? data.getCompound("GameRules") : new net.minecraft.nbt.CompoundTag();
+        rules.putString("spawnChunkRadius", "0");
+        data.put("GameRules", rules);
+        net.minecraft.nbt.NbtIo.writeCompressed(tag, level);
     }
 
     /** A delta smaller than this is fetched at once; the bookkeeping of a lazy start is not worth it. */

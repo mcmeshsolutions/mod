@@ -43,6 +43,10 @@ public final class MeshBoot {
         try {
             Path root = universe.resolve(levelName()).toAbsolutePath().normalize();
             MeshTap.setRoot(root);
+            if (MeshConfig.SHARD_STANDBY.get()) {
+                held = shardStandby(root);
+                return;
+            }
             // an anchor with wake on join must not grab a free world at boot either, or it would never be idle
             boolean waitForDemand = MeshConfig.ANCHOR_STANDBY.get() && !wanted();
             MeshService s = waitForDemand ? null : MeshService.join(root, 1, Runtime.getRuntime().availableProcessors());
@@ -78,6 +82,25 @@ public final class MeshBoot {
         }
     }
     static final long STANDBY_POLL_MS = 3_000;
+
+    /** Waits for an offer of regions, takes it and builds the shard's partial world. Returns only with a lease, or throws. */
+    private static MeshService shardStandby(Path root) throws Exception {
+        String world = MeshConfig.WORLD.get();
+        String token = MeshAuth.token();
+        var gw = new dev.mcmesh.core.GatewayClient(MeshConfig.API_URL.get(), token);
+        LOG.info("shard standby: waiting for the host of {} to set regions aside", world);
+        while (true) {
+            try {
+                var grant = gw.shardClaim(world);
+                if (grant != null) {
+                    return MeshService.joinShard(root, world, token, MeshConfig.PLAYER_NAME.get(), grant);
+                }
+            } catch (java.io.IOException | dev.mcmesh.core.GatewayException e) {
+                LOG.warn("shard standby: gateway not reachable, retrying: {}", e.toString());
+            }
+            Thread.sleep(STANDBY_POLL_MS);
+        }
+    }
 
     /**
      * Anchor node: nobody else may be hosting, and the world must not be loaded until this machine holds the lease.

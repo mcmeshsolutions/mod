@@ -64,6 +64,12 @@ public final class MeshService {
     private volatile RegionScan regions;
     private volatile boolean closed;
     private Thread exitHook;
+    /** A lease for some regions of the world, not for the world: it never takes part in handovers and has no say over level.dat. */
+    private boolean shard;
+
+    public boolean isShard() {
+        return shard;
+    }
 
     private MeshService(GatewayClient gw, Lease lease) throws java.io.IOException {
         this.gw = gw;
@@ -142,7 +148,17 @@ public final class MeshService {
         if (commits.refused()) {
             return false;
         }
-        dev.mcmesh.core.Revision r = commits.commit(baseRev, kind, last);
+        dev.mcmesh.core.Revision r;
+        try {
+            r = commits.commit(baseRev, kind, last);
+        } catch (dev.mcmesh.core.GatewayException e) {
+            if (!e.code.equals("HEAD_MOVED") || shard) {
+                throw e;
+            }
+            // a shard host committed in between; this host's WAL holds none of the shard's regions, so its changes go on top of the new head
+            baseRev = gw.revisionIds(worldId, 1).get(0);
+            r = commits.commit(baseRev, kind, last);
+        }
         if (r != null) {
             baseRev = r.id();
             mark(baseRev);
@@ -228,6 +244,37 @@ public final class MeshService {
             } catch (IllegalStateException ignored) { }
             throw e;
         }
+        return s;
+    }
+
+    /**
+     * A shard host: takes a lease for some regions of the world another machine hosts. The world folder holds only those regions and
+     * the extra files, the host is heard of only by the players whose files it writes, and it never takes part in handovers.
+     */
+    public static MeshService joinShard(java.nio.file.Path worldRoot, String world, String token, String owner, GatewayClient.ShardGrant grant) throws Exception {
+        GatewayClient gw = new GatewayClient(MeshConfig.API_URL.get(), token);
+        MeshService s = new MeshService(gw, grant.lease());
+        s.token = token;
+        s.worldRoot = worldRoot;
+        s.owner = owner;
+        s.worldId = world;
+        s.shard = true;
+        s.startSigner(token);
+        s.session.start();
+        s.exitHook = new Thread(s::shutdownAfterServerStop, "mesh-exit");
+        Runtime.getRuntime().addShutdownHook(s.exitHook);
+        try {
+            WorldSync.syncShard(gw, worldRoot, grant.lease().baseRev(), grant.regions());
+            Ownership.becomeShard(grant.regions());
+            s.regions = new RegionScan(System.currentTimeMillis());
+        } catch (Exception e) {
+            s.session.close();
+            try {
+                Runtime.getRuntime().removeShutdownHook(s.exitHook);
+            } catch (IllegalStateException ignored) { }
+            throw e;
+        }
+        LOG.info("hosting {} region rectangles of {} as shard {}", grant.regions().size(), world, grant.lease().id());
         return s;
     }
 

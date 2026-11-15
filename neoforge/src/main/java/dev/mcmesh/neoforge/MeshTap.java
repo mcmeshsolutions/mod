@@ -25,14 +25,14 @@ public final class MeshTap {
 
     public static void put(String dim, String kind, int cx, int cz, byte[] data) {
         MeshService s = MeshService.current();
-        if (s != null) {
+        if (s != null && Ownership.writes(dim, cx, cz)) {
             s.uploader().put(dim, kind, cx, cz, data);
         }
     }
 
     public static void delete(String dim, String kind, int cx, int cz) {
         MeshService s = MeshService.current();
-        if (s != null) {
+        if (s != null && Ownership.writes(dim, cx, cz)) {
             s.uploader().delete(dim, kind, cx, cz);
         }
     }

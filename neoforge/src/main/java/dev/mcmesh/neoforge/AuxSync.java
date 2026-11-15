@@ -26,6 +26,9 @@ final class AuxSync {
         Set<String> present = new HashSet<>();
         for (Path f : candidates(root)) {
             String rel = root.relativize(f).toString().replace('\\', '/');
+            if (!Ownership.writesAux(rel)) {
+                continue;
+            }
             present.add(rel);
             String meta;
             try {
@@ -71,7 +74,7 @@ final class AuxSync {
             @Override
             public java.nio.file.FileVisitResult visitFile(Path f, java.nio.file.attribute.BasicFileAttributes at) {
                 String n = f.getFileName().toString();
-                boolean skip = !at.isRegularFile() || at.size() > MAX_FILE || n.equals("session.lock") || n.equals(WorldSync.MARKER)
+                boolean skip = !at.isRegularFile() || at.size() > MAX_FILE || n.equals("session.lock") || n.equals(WorldSync.MARKER) || n.equals(WorldSync.SHARD_MARKER)
                         || n.equals("level.dat_old") || n.endsWith(".mca") || n.endsWith(".tmp") || n.endsWith(".mesh-tmp") || n.endsWith(".lock")
                         || n.contains(".sqlite") || n.endsWith(".log");
                 if (!skip) {

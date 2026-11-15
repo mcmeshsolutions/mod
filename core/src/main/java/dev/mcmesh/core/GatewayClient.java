@@ -345,7 +345,10 @@ public final class GatewayClient {
 
     public record ShardGrant(Lease lease, java.util.List<ShardRegion> regions) { }
 
-    public record ShardLive(String id, String device, java.util.List<ShardRegion> regions) { }
+    /** A shard of the world: live, or ended and waiting for the main host to take its regions and players back. */
+    public record ShardLive(String id, String device, java.util.List<ShardRegion> regions, boolean live, java.util.List<String> players) { }
+
+    public record ShardView(java.util.List<ShardLive> shards, java.util.List<ShardRegion> offered, int standby) { }
 
     private static JsonArray regionsJson(java.util.List<ShardRegion> regions) {
         JsonArray a = new JsonArray();
@@ -380,15 +383,27 @@ public final class GatewayClient {
         return post("/v1/worlds/" + world + "/shards", b).get("offer").getAsLong();
     }
 
-    /** Live shards of a world; the offers are not included. */
-    public java.util.List<ShardLive> shards(String world) throws IOException, GatewayException {
+    /** The shards that still matter, the regions of open offers, and how many machines are waiting to host a shard. */
+    public ShardView shards(String world) throws IOException, GatewayException {
         byte[] r = exec("/v1/worlds/" + world + "/shards", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
+        JsonObject root = JsonParser.parseString(new String(r)).getAsJsonObject();
         java.util.List<ShardLive> out = new ArrayList<>();
-        for (JsonElement e : JsonParser.parseString(new String(r)).getAsJsonObject().getAsJsonArray("shards")) {
+        for (JsonElement e : root.getAsJsonArray("shards")) {
             JsonObject o = e.getAsJsonObject();
-            out.add(new ShardLive(o.get("id").getAsString(), o.get("device").getAsString(), regionsOf(o.getAsJsonArray("regions"))));
+            java.util.List<String> players = new ArrayList<>();
+            o.getAsJsonArray("players").forEach(p -> players.add(p.getAsString()));
+            out.add(new ShardLive(o.get("id").getAsString(), o.get("device").getAsString(), regionsOf(o.getAsJsonArray("regions")), o.get("live").getAsBoolean(), players));
         }
-        return out;
+        java.util.List<ShardRegion> offered = new ArrayList<>();
+        for (JsonElement e : root.getAsJsonArray("offers")) {
+            offered.addAll(regionsOf(e.getAsJsonObject().getAsJsonArray("regions")));
+        }
+        return new ShardView(out, offered, root.get("standby").getAsInt());
+    }
+
+    /** The main host has the shard's regions and players back; from now on they are its to write. */
+    public void shardMerged(String world, String shardLease) throws IOException, GatewayException {
+        post("/v1/worlds/" + world + "/shards/" + shardLease + "/merged", new JsonObject());
     }
 
     /** Takes the oldest open offer of the world, or null when there is none. */
