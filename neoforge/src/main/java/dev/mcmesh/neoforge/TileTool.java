@@ -30,6 +30,7 @@ public final class TileTool {
             case "compare" -> compare(Path.of(a[1]), Path.of(a[2]), rect(a, 3), Integer.parseInt(a[7]));
             case "digest" -> digest(Path.of(a[1]), Path.of(a[2]), rect(a, 3));
             case "selftest" -> System.exit(TileSelfTest.run());
+            case "census" -> census(Path.of(a[1]));
             case "entity-diff" -> entityDiff(Path.of(a[1]), Path.of(a[2]), Integer.parseInt(a[3]), Integer.parseInt(a[4]));
             default -> throw new IllegalArgumentException("install <src> <dst> x1 z1 x2 z2 | compare <a> <b> x1 z1 x2 z2 rings");
         }
@@ -79,6 +80,83 @@ public final class TileTool {
                 }
             }
         }
+    }
+
+    /** What a world actually holds that has to be ticked: block entities and entities by type, and where they cluster. */
+    private static void census(Path worldRoot) throws IOException {
+        Map<String, Integer> blockEntities = new TreeMap<>();
+        Map<String, Integer> entityTypes = new TreeMap<>();
+        List<long[]> perChunk = new ArrayList<>();
+        long chunks = 0;
+        try (RegionIo io = new RegionIo(worldRoot); java.util.stream.Stream<Path> files = java.nio.file.Files.list(worldRoot.resolve("region"))) {
+            for (Path f : (Iterable<Path>) files.filter(p -> p.getFileName().toString().endsWith(".mca")).sorted()::iterator) {
+                String[] n = f.getFileName().toString().split("\\.");
+                int rx = Integer.parseInt(n[1]);
+                int rz = Integer.parseInt(n[2]);
+                for (int i = 0; i < 1024; i++) {
+                    int cx = rx * 32 + (i & 31);
+                    int cz = rz * 32 + (i >> 5);
+                    CompoundTag t = io.read("region", cx, cz);
+                    if (t == null) {
+                        continue;
+                    }
+                    chunks++;
+                    ListTag be = t.getList("block_entities", 10);
+                    for (int k = 0; k < be.size(); k++) {
+                        blockEntities.merge(be.getCompound(k).getString("id"), 1, Integer::sum);
+                    }
+                    CompoundTag e = io.read("entities", cx, cz);
+                    int ents = 0;
+                    if (e != null) {
+                        ListTag l = e.getList("Entities", 10);
+                        ents = l.size();
+                        for (int k = 0; k < l.size(); k++) {
+                            entityTypes.merge(l.getCompound(k).getString("id"), 1, Integer::sum);
+                        }
+                    }
+                    if (be.size() + ents > 0) {
+                        perChunk.add(new long[] {cx, cz, be.size(), ents});
+                    }
+                }
+            }
+        }
+        System.out.println("chunks stored: " + chunks + ", block entities: " + blockEntities.values().stream().mapToInt(Integer::intValue).sum() + ", entities: " + entityTypes.values().stream().mapToInt(Integer::intValue).sum());
+        System.out.println("block entities by type:");
+        blockEntities.entrySet().stream().sorted((x, y) -> y.getValue() - x.getValue()).limit(25).forEach(x -> System.out.println("  " + x.getValue() + " " + x.getKey()));
+        System.out.println("entities by type:");
+        entityTypes.entrySet().stream().sorted((x, y) -> y.getValue() - x.getValue()).limit(12).forEach(x -> System.out.println("  " + x.getValue() + " " + x.getKey()));
+        // the 17 x 17 chunk squares (a player at simulation distance 8) holding the most block entities and entities, in steps of 4
+        Map<Long, long[]> cell = new java.util.HashMap<>();
+        for (long[] c : perChunk) {
+            cell.put((c[0] << 32) | (c[1] & 0xFFFFFFFFL), c);
+        }
+        List<long[]> squares = new ArrayList<>();
+        java.util.Set<Long> seen = new java.util.HashSet<>();
+        for (long[] c : perChunk) {
+            long sx = Math.floorDiv(c[0], 4) * 4;
+            long sz = Math.floorDiv(c[1], 4) * 4;
+            if (!seen.add((sx << 32) | (sz & 0xFFFFFFFFL))) {
+                continue;
+            }
+            long be = 0;
+            long en = 0;
+            for (long x = sx - 4; x <= sx + 12; x++) {
+                for (long z = sz - 4; z <= sz + 12; z++) {
+                    long[] v = cell.get((x << 32) | (z & 0xFFFFFFFFL));
+                    if (v != null) {
+                        be += v[2];
+                        en += v[3];
+                    }
+                }
+            }
+            squares.add(new long[] {sx + 4, sz + 4, be, en});
+        }
+        squares.sort((x, y) -> Long.compare(y[2] + y[3], x[2] + x[3]));
+        System.out.println("busiest 17 x 17 squares (centre chunk x, z, block entities, entities):");
+        squares.stream().limit(6).forEach(x -> System.out.println("  " + x[0] + "," + x[1] + "  " + x[2] + "  " + x[3]));
+        perChunk.sort((x, y) -> Long.compare(y[2] + y[3], x[2] + x[3]));
+        System.out.println("busiest chunks (chunk x, z, block entities, entities):");
+        perChunk.stream().limit(8).forEach(x -> System.out.println("  " + x[0] + "," + x[1] + "  " + x[2] + "  " + x[3]));
     }
 
     /** How many chunks of a rectangle have the same canonical digest in two worlds, which is what two workers would report to the gateway. */
