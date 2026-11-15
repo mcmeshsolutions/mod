@@ -132,6 +132,11 @@ final class WorldSync {
         Sink sink = new Sink(root);
         try {
             SyncProgress.begin();
+            var planned = WorldDownloader.plan(gw.listRevision(have), gw.listRevision(rev));
+            if (MeshConfig.LAZY_BOOTSTRAP.get() && MeshService.safeMode().lazyBootstrap() && planned.chunks().size() >= Integer.getInteger("mcmesh.lazy.deltaMin", LAZY_DELTA_MIN)) {
+                lazyDelta(gw, root, rev, planned, sink);
+                return true;
+            }
             var d = WorldDownloader.downloadDelta(gw, have, rev, sink, SyncProgress::update);
             LOG.info("incremental sync {} to {}: {} chunks and {} extra files fetched, {} chunks removed", have, rev, d.chunks().size(), d.aux().size(), d.removedChunks().size());
             return true;
@@ -146,6 +151,35 @@ final class WorldSync {
             }
             SyncProgress.end();
         }
+    }
+
+    /** A delta smaller than this is fetched at once; the bookkeeping of a lazy start is not worth it. */
+    private static final int LAZY_DELTA_MIN = 512;
+
+    /**
+     * The same idea as {@link #lazyDownload} for a copy that is only behind: the extra files and the changed chunks near spawn and the
+     * players come down now, the changed chunks of every other region wait and are patched into the files already on disk when the
+     * game first opens the region, or by the drain, nearest the players first. Removed chunks are dropped at once.
+     */
+    private static void lazyDelta(GatewayClient gw, Path root, String rev, WorldDownloader.Delta d, Sink sink) throws Exception {
+        for (var c : d.removedChunks()) {
+            sink.removeChunk(c);
+        }
+        WorldDownloader.downloadParts(gw, List.of(), d.aux(), sink, SyncProgress::update);
+        var anchors = LazyWorld.anchors(root);
+        var eager = dev.mcmesh.core.LazyPlan.eagerRegions(d.chunks(), anchors, MeshConfig.LAZY_RADIUS_REGIONS.get(), MeshConfig.LAZY_SMALL_DIM_CHUNKS.get());
+        var split = dev.mcmesh.core.LazyPlan.split(d.chunks(), eager);
+        int n = WorldDownloader.downloadParts(gw, split.eager(), List.of(), sink, SyncProgress::update);
+        LOG.info("lazy delta: {} anchors, {} changed chunks downloaded now, {} regions with {} changed chunks left for later, {} chunks removed",
+                anchors.size(), n, split.pending().size(), split.pendingChunks(), d.removedChunks().size());
+        sink.close();
+        if (split.pending().isEmpty()) {
+            return;
+        }
+        LazyWorld w = LazyWorld.begin(gw, root, split.pending(), (int) (System.currentTimeMillis() / 1000) - 3600, true);
+        // the marker must name the new revision before the world opens, or a restart would call this folder unmanaged
+        Files.writeString(root.resolve(MARKER), rev, StandardCharsets.UTF_8);
+        w.startDrain();
     }
 
     static boolean hasChunkData(Path root) throws IOException {

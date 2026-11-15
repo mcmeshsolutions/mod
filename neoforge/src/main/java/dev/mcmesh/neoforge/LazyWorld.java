@@ -50,8 +50,11 @@ final class LazyWorld {
     private volatile boolean closed;
     private int done;
     private final int total;
+    /** Pending regions hold only the changed chunks and are patched into the files on disk; otherwise they hold a whole region and replace it. */
+    private final boolean patch;
 
-    private LazyWorld(GatewayClient gw, Path root, Map<String, List<RevisionFiles.Chunk>> pending, int backdateSec) {
+    private LazyWorld(GatewayClient gw, Path root, Map<String, List<RevisionFiles.Chunk>> pending, int backdateSec, boolean patch) {
+        this.patch = patch;
         this.gw = gw;
         this.root = root;
         this.stateFile = stateFile(root);
@@ -122,7 +125,11 @@ final class LazyWorld {
 
     /** Starts managing the given pending regions. The caller has already written the eager ones. */
     static LazyWorld begin(GatewayClient gw, Path root, Map<String, List<RevisionFiles.Chunk>> pending, int backdateSec) throws IOException {
-        LazyWorld w = new LazyWorld(gw, root, pending, backdateSec);
+        return begin(gw, root, pending, backdateSec, false);
+    }
+
+    static LazyWorld begin(GatewayClient gw, Path root, Map<String, List<RevisionFiles.Chunk>> pending, int backdateSec, boolean patch) throws IOException {
+        LazyWorld w = new LazyWorld(gw, root, pending, backdateSec, patch);
         w.persist();
         active = w;
         LOG.info("lazy bootstrap: {} regions ({} chunks) wait on the gateway, the rest is on disk", pending.size(), pending.values().stream().mapToInt(List::size).sum());
@@ -196,7 +203,7 @@ final class LazyWorld {
     private void materialize(String key, List<RevisionFiles.Chunk> chunks) throws IOException {
         // a partial file from a crash is ours to replace: the game has never opened a pending region
         String[] k = key.split("\\|");
-        for (String kind : KINDS) {
+        for (String kind : patch ? List.<String>of() : KINDS) {
             Files.deleteIfExists(WorldPaths.dirOf(root, k[0]).resolve(kind).resolve("r." + k[1] + "." + k[2] + ".mca"));
         }
         WorldSync.Sink sink = new WorldSync.Sink(root);
@@ -299,7 +306,7 @@ final class LazyWorld {
                 l.add(c);
             }
         }
-        LazyWorld w = new LazyWorld(gw, root, byKey, (int) (System.currentTimeMillis() / 1000) - 3600);
+        LazyWorld w = new LazyWorld(gw, root, byKey, (int) (System.currentTimeMillis() / 1000) - 3600, false);
         LOG.info("lazy bootstrap: finishing {} regions left by the last session before the world loads", saved.size());
         for (String key : saved) {
             w.ensure(key);
