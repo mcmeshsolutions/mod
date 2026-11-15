@@ -450,6 +450,28 @@ public final class MeshService {
         uploader.flush(true);
     }
 
+    /**
+     * A handover that is planned (somebody asked for the world, the battery is going) is prepared while the world still runs: save and
+     * upload everything, freeze ticking, save and upload again. The stop that follows rewrites every loaded chunk, but with the clock
+     * stopped the bytes equal what was just sent, so the uploader skips them and the final commit is nearly empty. Bounded by
+     * `limitMs`; a failure only costs the head start. Call from a worker thread, then halt the server.
+     */
+    public void prepareHandover(net.minecraft.server.MinecraftServer server, long limitMs) {
+        long end = System.currentTimeMillis() + limitMs;
+        try {
+            server.submit(() -> server.saveAllChunks(true, true, false)).get(Math.max(1, end - System.currentTimeMillis()), java.util.concurrent.TimeUnit.MILLISECONDS);
+            autosave();
+            server.submit(() -> {
+                server.tickRateManager().setFrozen(true);
+                server.saveAllChunks(true, true, false);
+            }).get(Math.max(1, end - System.currentTimeMillis()), java.util.concurrent.TimeUnit.MILLISECONDS);
+            autosave();
+            LOG.info("handover prepared in {} ms", limitMs - (end - System.currentTimeMillis()));
+        } catch (Exception e) {
+            LOG.warn("handover preparation stopped early, the normal stop takes over: {}", e.toString());
+        }
+    }
+
     /** Autosave out of schedule, at most once a minute. Returns false when throttled. */
     public boolean emergencySave() throws Exception {
         long now = System.currentTimeMillis();

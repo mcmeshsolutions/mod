@@ -106,11 +106,7 @@ final class HandoverWatch {
                 ? "The host machine is going to sleep. Hosting is moving to another player, you will be reconnected automatically."
                 : "The host machine can no longer keep up (empty battery or a very slow connection). Hosting is moving to another player, you will be reconnected automatically."), false);
         Thread.ofVirtual().start(() -> {
-            try {
-                Thread.sleep(8_000);
-            } catch (InterruptedException ex) {
-                return;
-            }
+            s.prepareHandover(server, 20_000);
             server.execute(() -> server.halt(false));
         });
         criticalStreak = 0;

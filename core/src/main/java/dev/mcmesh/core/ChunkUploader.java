@@ -21,6 +21,8 @@ public final class ChunkUploader {
     private final Chain chain;
     private final Map<Key, byte[]> pending = new LinkedHashMap<>();
     private final Object flushLock = new Object();
+    /** SHA-256 of what was last sent per key, so a chunk that is saved again with identical bytes is not sent again. */
+    private final Map<Key, java.nio.ByteBuffer> sentHash = new java.util.HashMap<>();
 
     public ChunkUploader(GatewayClient gw, Lease lease) {
         this.gw = gw;
@@ -79,6 +81,7 @@ public final class ChunkUploader {
                 work = new ArrayList<>(pending.entrySet());
                 pending.clear();
             }
+            work = withoutRepeats(work);
             int sent = 0;
             try {
                 while (sent < work.size()) {
@@ -102,6 +105,19 @@ public final class ChunkUploader {
                 throw ex;
             }
         }
+    }
+
+    private List<Map.Entry<Key, byte[]>> withoutRepeats(List<Map.Entry<Key, byte[]>> work) {
+        List<Map.Entry<Key, byte[]>> out = new ArrayList<>(work.size());
+        synchronized (sentHash) {
+            for (Map.Entry<Key, byte[]> e : work) {
+                if (e.getValue() != null && java.nio.ByteBuffer.wrap(Bytes.sha256(e.getValue())).equals(sentHash.get(e.getKey()))) {
+                    continue;
+                }
+                out.add(e);
+            }
+        }
+        return out;
     }
 
     /** Blob uploads are independent of each other, so overlap them: sequential PUTs are bound by round-trip time, not bandwidth. */
@@ -163,6 +179,20 @@ public final class ChunkUploader {
                 frames.add(chain.next("barrier", "", 0, 0, null));
             }
             gw.walAppend(lease.id(), lease.epoch(), frames);
+            // remembered only now: a batch that failed goes back to pending and must not be skipped as already sent
+            synchronized (sentHash) {
+                for (int i = 0; i < items.size(); i++) {
+                    Key k = items.get(i).getKey();
+                    byte[] hash = hashes.get(i);
+                    if (k.op().startsWith("del:")) {
+                        sentHash.remove(new Key("put:" + k.op().substring(4), k.dim(), k.cx(), k.cz()));
+                    } else if (k.op().equals("aux_del")) {
+                        sentHash.remove(new Key("aux_put", k.dim(), 0, 0));
+                    } else if (hash != null) {
+                        sentHash.put(k, java.nio.ByteBuffer.wrap(hash));
+                    }
+                }
+            }
             if (barrier) {
                 lastBarrierSeq = frames.get(frames.size() - 1).seq();
             }

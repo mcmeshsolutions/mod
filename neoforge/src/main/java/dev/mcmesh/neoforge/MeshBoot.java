@@ -77,7 +77,7 @@ public final class MeshBoot {
             LOG.info("anchor not registered (the operator flags a device with `gatewayd set-anchor`): {}", e.toString());
         }
     }
-    static final long STANDBY_POLL_MS = 10_000;
+    static final long STANDBY_POLL_MS = 3_000;
 
     /**
      * Anchor node: nobody else may be hosting, and the world must not be loaded until this machine holds the lease.

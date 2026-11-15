@@ -84,20 +84,16 @@ public final class MeshEvents {
         s.onHandoff(name -> server.execute(() -> {
             server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal(
                     name + " wants to play together. Hosting is moving to their machine, you will be reconnected automatically."), false);
-            Runnable go = () -> server.execute(() -> server.halt(false));
+            Runnable go = () -> Thread.ofVirtual().start(() -> {
+                s.prepareHandover(server, 30_000);
+                server.execute(() -> server.halt(false));
+            });
             var warn = MeshService.handoffWarning;
             if (warn != null) {
                 warn.accept(name, go);
                 return;
             }
-            Thread.ofVirtual().start(() -> {
-                try {
-                    Thread.sleep(8_000);
-                } catch (InterruptedException ex) {
-                    return;
-                }
-                go.run();
-            });
+            go.run();
         }));
         Thread.ofVirtual().start(() -> {
             try {

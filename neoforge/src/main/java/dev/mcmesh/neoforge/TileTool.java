@@ -31,6 +31,7 @@ public final class TileTool {
             case "digest" -> digest(Path.of(a[1]), Path.of(a[2]), rect(a, 3));
             case "selftest" -> System.exit(TileSelfTest.run());
             case "census" -> census(Path.of(a[1]));
+            case "normdiff" -> normdiff(Path.of(a[1]), Path.of(a[2]));
             case "entity-diff" -> entityDiff(Path.of(a[1]), Path.of(a[2]), Integer.parseInt(a[3]), Integer.parseInt(a[4]));
             default -> throw new IllegalArgumentException("install <src> <dst> x1 z1 x2 z2 | compare <a> <b> x1 z1 x2 z2 rings");
         }
@@ -83,6 +84,53 @@ public final class TileTool {
     }
 
     /** What a world actually holds that has to be ticked: block entities and entities by type, and where they cluster. */
+    /** Chunks of B against A: identical, different only in LastUpdate and InhabitedTime (a save that changed nothing), or really different. */
+    private static void normdiff(Path a, Path b) throws IOException {
+        int same = 0;
+        int stamps = 0;
+        int absent = 0;
+        Map<String, Integer> keys = new TreeMap<>();
+        try (RegionIo ia = new RegionIo(a); RegionIo ib = new RegionIo(b); java.util.stream.Stream<Path> files = java.nio.file.Files.list(b.resolve("region"))) {
+            for (Path f : (Iterable<Path>) files.filter(p -> p.getFileName().toString().endsWith(".mca")).sorted()::iterator) {
+                String[] n = f.getFileName().toString().split("\\.");
+                for (int i = 0; i < 1024; i++) {
+                    int cx = Integer.parseInt(n[1]) * 32 + (i & 31);
+                    int cz = Integer.parseInt(n[2]) * 32 + (i >> 5);
+                    CompoundTag nb = ib.read("region", cx, cz);
+                    if (nb == null) {
+                        continue;
+                    }
+                    CompoundTag na = ia.read("region", cx, cz);
+                    if (na == null) {
+                        absent++;
+                        continue;
+                    }
+                    if (na.equals(nb)) {
+                        same++;
+                        continue;
+                    }
+                    CompoundTag x = na.copy();
+                    CompoundTag y = nb.copy();
+                    for (String k : new String[] {"LastUpdate", "InhabitedTime"}) {
+                        x.remove(k);
+                        y.remove(k);
+                    }
+                    if (x.equals(y)) {
+                        stamps++;
+                        continue;
+                    }
+                    for (String k : x.getAllKeys()) {
+                        if (!java.util.Objects.equals(x.get(k), y.get(k))) {
+                            keys.merge(k, 1, Integer::sum);
+                        }
+                    }
+                }
+            }
+        }
+        System.out.println("identical " + same + ", only LastUpdate/InhabitedTime differ " + stamps + ", only in B " + absent + ", really different " + keys.values().stream().mapToInt(Integer::intValue).max().orElse(0) + "+ (fields that differ, by chunks):");
+        keys.entrySet().stream().sorted((p, q) -> q.getValue() - p.getValue()).forEach(e -> System.out.println("  " + e.getValue() + " " + e.getKey()));
+    }
+
     private static void census(Path worldRoot) throws IOException {
         Map<String, Integer> blockEntities = new TreeMap<>();
         Map<String, Integer> entityTypes = new TreeMap<>();
