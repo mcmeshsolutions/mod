@@ -11,7 +11,7 @@ import java.util.TreeMap;
 
 /** Tile geometry and result checking for distributed worldgen. The numbers come from board/RESEARCH.md section 1. */
 public final class WorldgenTiles {
-    /** Chunks generated around a tile and thrown away; from the fifth ring inward the stored chunks were identical between runs. */
+    /** The halo that settles vanilla (board/RESEARCH.md section 1). The pack needs 12 (1f); the real value is a world setting the gateway hands out with each tile. */
     public static final int HALO = 4;
     public static final int MIN_SIZE = 32;
 

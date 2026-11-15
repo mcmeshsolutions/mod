@@ -27,8 +27,8 @@ final class TileWorker {
     private static final long IDLE_MS = 20_000;
     private static final int UPLOADERS = 6;
     private static final String[] KINDS = {"region", "entities", "poi"};
-    /** How far around the tile the generator ships what its world saved; the gateway accepts up to 16. */
-    private static final int FRONTIER = 16;
+    /** The frontier reaches past the finished halo by this many chunks, to include the partially generated rings the seam fix needs. */
+    private static final int PAST_HALO = 8;
 
     private TileWorker() { }
 
@@ -128,8 +128,9 @@ final class TileWorker {
             if (generator) {
                 // everything the world saved just outside the tile, at whatever status it reached: the spill of the tile's edge features
                 // lives in these chunks, and without them the first chunks a host generates next to the tile are missing it (RESEARCH.md 1e)
-                for (int cx = c.x() - FRONTIER; cx < c.x() + c.size() + FRONTIER; cx++) {
-                    for (int cz = c.z() - FRONTIER; cz < c.z() + c.size() + FRONTIER; cz++) {
+                int reach = c.halo() + PAST_HALO;
+                for (int cx = c.x() - reach; cx < c.x() + c.size() + reach; cx++) {
+                    for (int cz = c.z() - reach; cz < c.z() + c.size() + reach; cz++) {
                         boolean inTile = cx >= c.x() && cx < c.x() + c.size() && cz >= c.z() && cz < c.z() + c.size();
                         CompoundTag region = inTile ? null : io.read("region", cx, cz);
                         if (region == null) {
