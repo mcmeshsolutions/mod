@@ -20,5 +20,8 @@ public final class MeshMod {
         // without it the score falls back to the core count and a strong machine looks weaker than the host
         dev.mcmesh.core.GatewayClient.hwScore = HostBench::bidScore;
         LogShipper.start();
+        if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) {
+            dev.mcmesh.neoforge.client.ConfigScreen.register(container);
+        }
     }
 }
