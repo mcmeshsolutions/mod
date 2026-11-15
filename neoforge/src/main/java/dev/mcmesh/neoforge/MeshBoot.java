@@ -103,9 +103,28 @@ public final class MeshBoot {
                     LOG.info("anchor standby over after {} s, taking the host lease", (System.currentTimeMillis() - since) / 1000);
                     return s;
                 }
+                warmSync(root);
             } catch (java.io.IOException e) {
                 LOG.warn("anchor standby: gateway not reachable, retrying: {}", e.toString());
             }
+        }
+    }
+
+    /**
+     * While another machine hosts, keep the local copy at the newest revision the gateway has, so taking over fetches only what
+     * changed since the last autosave instead of everything the old host wrote up to its stop. The world is not loaded here, and
+     * the same sync runs at join, so nothing new can go wrong with the files; a failure only costs the warm start.
+     */
+    private static void warmSync(Path root) {
+        try {
+            String token = MeshConfig.TOKEN.get();
+            var gw = new dev.mcmesh.core.GatewayClient(MeshConfig.API_URL.get(), token.isEmpty() ? MeshAuth.login().token() : token);
+            var head = gw.revisionIds(MeshConfig.WORLD.get(), 1);
+            if (!head.isEmpty()) {
+                WorldSync.sync(gw, root, head.get(0));
+            }
+        } catch (Exception e) {
+            LOG.warn("anchor standby: warm sync failed, the takeover will fetch everything it needs: {}", e.toString());
         }
     }
 
