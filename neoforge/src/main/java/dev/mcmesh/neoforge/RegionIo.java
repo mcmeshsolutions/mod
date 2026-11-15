@@ -55,6 +55,18 @@ final class RegionIo implements AutoCloseable {
         }
     }
 
+    /** The uncompressed NBT bytes of a stored chunk, or null: what the gateway holds and writeBytes takes. */
+    byte[] readBytes(String kind, int cx, int cz) throws IOException {
+        RegionFile rf = file(kind, cx, cz, false);
+        ChunkPos p = new ChunkPos(cx, cz);
+        if (rf == null || !rf.hasChunk(p)) {
+            return null;
+        }
+        try (DataInputStream in = rf.getChunkDataInputStream(p)) {
+            return in == null ? null : in.readAllBytes();
+        }
+    }
+
     void write(String kind, int cx, int cz, CompoundTag tag) throws IOException {
         try (DataOutputStream out = file(kind, cx, cz, true).getChunkDataOutputStream(new ChunkPos(cx, cz))) {
             NbtIo.write(tag, out);
@@ -71,7 +83,7 @@ final class RegionIo implements AutoCloseable {
     }
 
     /** Stores a chunk from the uncompressed NBT bytes the gateway holds. */
-    void writeBytes(String kind, int cx, int cz, byte[] nbt) throws IOException {
+    synchronized void writeBytes(String kind, int cx, int cz, byte[] nbt) throws IOException {
         try (DataOutputStream out = file(kind, cx, cz, true).getChunkDataOutputStream(new ChunkPos(cx, cz))) {
             out.write(nbt);
         }

@@ -146,28 +146,45 @@ final class TileHost {
         int x = t.get("x").getAsInt();
         int z = t.get("z").getAsInt();
         long t0 = System.nanoTime();
-        List<TileInstall.Chunk> chunks = fetch(gw, t);
-        TileInstall.Result res = chunks == null ? new TileInstall.Result(false, 0, 0, 0) : TileInstall.install(root, x >> 5, z >> 5, chunks);
+        Path dir = TileInstall.stageDir(root, id);
+        boolean fetched;
+        TileInstall.Result res = new TileInstall.Result(false, 0, 0, 0, 0);
+        try {
+            TileInstall.Stage stage = new TileInstall.Stage(dir);
+            try {
+                fetched = fetchInto(gw, t, stage);
+            } finally {
+                stage.close();
+            }
+            if (fetched) {
+                res = TileInstall.commit(root, stage, x >> 5, z >> 5);
+            }
+        } finally {
+            TileInstall.deleteTree(dir);
+        }
         gw.worldgenConsumed(world, id);
-        if (chunks == null) {
+        if (!fetched) {
             LOG.warn("worldgen: the tile at {},{} did not pass the checks and was dropped", x, z);
         } else if (res.installed()) {
             LEDGER.record(WorldgenTiles.Verdict.ACCEPT);
-            LOG.info("worldgen: installed the tile at {},{} ({} chunk entries written, {} kept as they were, {} neighbouring regions left alone, {} ms), {}",
-                    x, z, res.written(), res.keptExisting(), res.regionsSkipped(), (System.nanoTime() - t0) / 1_000_000, LEDGER.describe());
+            LOG.info("worldgen: installed the tile at {},{} ({} chunk entries written, {} kept as they were, {} neighbouring regions left alone, {} ms in all, new regions could not be opened for {} ms), {}",
+                    x, z, res.written(), res.keptExisting(), res.regionsSkipped(), (System.nanoTime() - t0) / 1_000_000, res.lockMillis(), LEDGER.describe());
         } else {
             LOG.info("worldgen: the game opened region {},{} before its tile arrived, the tile is dropped", x >> 5, z >> 5);
         }
     }
 
-    /** Downloads, hash checks and sanity checks every chunk of a ready tile. Null when anything is wrong with the tile itself. */
-    private static List<TileInstall.Chunk> fetch(GatewayClient gw, JsonObject t) throws Exception {
+    /**
+     * Downloads, hash checks and sanity checks every chunk of a ready tile into the stage, a few at a time so that neither memory
+     * nor the game ever holds the whole tile. False when anything is wrong with the tile itself; a bad frontier chunk is just left out.
+     */
+    private static boolean fetchInto(GatewayClient gw, JsonObject t, TileInstall.Stage stage) throws Exception {
         int x = t.get("x").getAsInt();
         int z = t.get("z").getAsInt();
         var leaves = t.getAsJsonArray("leaves");
         ExecutorService pool = Executors.newFixedThreadPool(FETCHERS);
         try {
-            List<Future<TileInstall.Chunk>> work = new ArrayList<>();
+            List<Future<Void>> work = new ArrayList<>();
             for (JsonElement le : leaves) {
                 JsonObject l = le.getAsJsonObject();
                 String kind = l.get("kind").getAsString();
@@ -193,24 +210,23 @@ final class TileHost {
                     if (!frontier && kind.equals("region") && !"minecraft:full".equals(status)) {
                         throw new IOException("chunk " + cx + "," + cz + " of the tile is at status " + status);
                     }
-                    return new TileInstall.Chunk(kind, cx, cz, data, status, frontier);
+                    stage.add(kind, cx, cz, data, status, frontier);
+                    return null;
                 }));
             }
-            List<TileInstall.Chunk> out = new ArrayList<>();
-            for (Future<TileInstall.Chunk> f : work) {
+            for (Future<Void> f : work) {
                 try {
-                    TileInstall.Chunk c = f.get();
-                    if (c != null) {
-                        out.add(c);
-                    }
+                    f.get();
                 } catch (java.util.concurrent.ExecutionException e) {
                     LOG.warn("worldgen: tile at {},{}: {}", x, z, e.getCause() == null ? e : e.getCause().getMessage());
-                    return null;
+                    return false;
                 }
             }
-            return out;
+            return true;
         } finally {
-            pool.shutdown();
+            // no download may still be writing into the stage when the caller closes and deletes it
+            pool.shutdownNow();
+            pool.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS);
         }
     }
 }
