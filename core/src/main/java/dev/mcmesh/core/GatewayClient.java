@@ -539,4 +539,61 @@ public final class GatewayClient {
     public byte[] blobGet(byte[] hash) throws IOException, GatewayException {
         return exec("/v1/blobs/" + Bytes.hex(hash), "GET", HttpRequest.BodyPublishers.noBody(), "application/octet-stream");
     }
+
+    /** What a worker is told to do with a tile. {@code role} is "generate" or "verify". */
+    public record WorldgenClaim(long tile, String world, String dim, int x, int z, int size, int halo, int genVersion, String seed, String profile, String role) { }
+
+    /** Asks for a tile to work on, or null when nothing fits this profile. A claim lasts 30 minutes; asking again resumes it. */
+    public WorldgenClaim worldgenClaim(String profile) throws IOException, GatewayException {
+        JsonObject b = new JsonObject();
+        b.addProperty("profile", profile);
+        JsonElement c = post("/v1/worldgen/claim", b).get("claim");
+        if (c == null || c.isJsonNull()) {
+            return null;
+        }
+        JsonObject o = c.getAsJsonObject();
+        return new WorldgenClaim(o.get("tile").getAsLong(), o.get("world").getAsString(), o.get("dim").getAsString(), o.get("x").getAsInt(), o.get("z").getAsInt(),
+                o.get("size").getAsInt(), o.get("halo").getAsInt(), o.get("gen_version").getAsInt(), o.get("seed").getAsString(), o.get("profile").getAsString(), o.get("role").getAsString());
+    }
+
+    /** One stored chunk of a tile; {@code leaves} is null for a verifier. Returns the gateway's outcome: waiting, ready, retry or rejected. */
+    public String worldgenResult(long tile, byte[] digest, String chunkDigestsHex, com.google.gson.JsonArray leaves) throws IOException, GatewayException {
+        JsonObject b = new JsonObject();
+        b.addProperty("digest", Bytes.hex(digest));
+        if (chunkDigestsHex != null) {
+            b.addProperty("chunk_digests", chunkDigestsHex);
+        }
+        if (leaves != null) {
+            b.add("leaves", leaves);
+        }
+        byte[] r = exec("/v1/worldgen/tiles/" + tile + "/result", "PUT", HttpRequest.BodyPublishers.ofString(b.toString()), "application/json");
+        return JsonParser.parseString(new String(r)).getAsJsonObject().get("outcome").getAsString();
+    }
+
+    /** The host asks for tiles, each given as the south-west chunk [x, z] of a region. Returns how many were new. */
+    public int worldgenRequest(String world, String profile, String seed, String dim, java.util.List<int[]> tiles) throws IOException, GatewayException {
+        JsonObject b = new JsonObject();
+        b.addProperty("profile", profile);
+        b.addProperty("seed", seed);
+        b.addProperty("dim", dim);
+        com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+        for (int[] t : tiles) {
+            com.google.gson.JsonArray p = new com.google.gson.JsonArray();
+            p.add(t[0]);
+            p.add(t[1]);
+            a.add(p);
+        }
+        b.add("tiles", a);
+        return post("/v1/worlds/" + world + "/worldgen/tiles", b).get("queued").getAsInt();
+    }
+
+    /** Tiles the peers agreed on (with the generator's chunk list) and tiles they never agreed on. */
+    public JsonObject worldgenTiles(String world) throws IOException, GatewayException {
+        byte[] r = exec("/v1/worlds/" + world + "/worldgen/tiles", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
+        return JsonParser.parseString(new String(r)).getAsJsonObject();
+    }
+
+    public void worldgenConsumed(String world, long tile) throws IOException, GatewayException {
+        post("/v1/worlds/" + world + "/worldgen/tiles/" + tile + "/consumed", new JsonObject());
+    }
 }

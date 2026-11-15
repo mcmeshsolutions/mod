@@ -135,7 +135,7 @@ public final class DeterminismTool {
      * Decides, for one chunk that differs byte-wise, whether the world itself differs. Counts cells so a one-block
      * difference cannot hide behind a whole-chunk verdict. `cells[0]` is cells compared, `cells[1]` cells differing.
      */
-    private static void classify(CompoundTag l, CompoundTag r, int cx, int cz, Map<String, Integer> verdicts,
+    static void classify(CompoundTag l, CompoundTag r, int cx, int cz, Map<String, Integer> verdicts,
             long[] blockCells, long[] biomeCells, String[] firstReal, Map<String, Integer> swaps) {
         var ls = l.getList("sections", 10);
         var rs = r.getList("sections", 10);
@@ -200,6 +200,33 @@ public final class DeterminismTool {
             if (firstReal[0] == null && !ll.equals(rl)) {
                 firstReal[0] = "chunk " + cx + "," + cz + " block entity example: "
                         + (ll.isEmpty() ? "none" : ll.get(0)) + " VS " + (rl.isEmpty() ? "none" : rl.get(0));
+            }
+            Map<String, CompoundTag> byPos = new TreeMap<>();
+            for (int i = 0; i < rb.size(); i++) {
+                CompoundTag e = rb.getCompound(i);
+                byPos.put(e.getInt("x") + "," + e.getInt("y") + "," + e.getInt("z"), e);
+            }
+            for (int i = 0; i < lb.size(); i++) {
+                CompoundTag e = lb.getCompound(i);
+                CompoundTag o = byPos.get(e.getInt("x") + "," + e.getInt("y") + "," + e.getInt("z"));
+                if (o == null) {
+                    verdicts.merge("block entity " + e.getString("id") + " only on one side", 1, Integer::sum);
+                    continue;
+                }
+                java.util.Set<String> ks = new java.util.TreeSet<>(e.getAllKeys());
+                ks.addAll(o.getAllKeys());
+                List<String> d = new java.util.ArrayList<>();
+                for (String k : ks) {
+                    if (!java.util.Objects.equals(e.get(k), o.get(k))) {
+                        d.add(k);
+                    }
+                }
+                if (!d.isEmpty()) {
+                    verdicts.merge("block entity " + e.getString("id") + " differs in " + d, 1, Integer::sum);
+                    if (d.contains("SpawnData")) {
+                        verdicts.merge("spawner mob " + e.getCompound("SpawnData").getCompound("entity").getString("id") + " vs " + o.getCompound("SpawnData").getCompound("entity").getString("id") + " at y=" + e.getInt("y"), 1, Integer::sum);
+                    }
+                }
             }
             return;
         }
@@ -267,7 +294,7 @@ public final class DeterminismTool {
         return b.toString();
     }
 
-    private static CompoundTag withoutLight(CompoundTag c) {
+    static CompoundTag withoutLight(CompoundTag c) {
         CompoundTag copy = c.copy();
         var sections = copy.getList("sections", 10);
         for (int i = 0; i < sections.size(); i++) {

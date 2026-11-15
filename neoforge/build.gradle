@@ -51,6 +51,12 @@ tasks.register('determinism', JavaExec) {
     args = (project.findProperty('toolArgs') ?: '').toString().split(' ').findAll { it }
 }
 
+tasks.register('tile', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dev.mcmesh.neoforge.TileTool'
+    args = (project.findProperty('toolArgs') ?: '').toString().split(' ').findAll { it }
+}
+
 tasks.register('islands', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'dev.mcmesh.neoforge.IslandTool'
