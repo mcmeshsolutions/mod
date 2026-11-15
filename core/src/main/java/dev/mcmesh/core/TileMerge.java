@@ -44,6 +44,19 @@ public final class TileMerge {
     }
 
     /**
+     * Whether to write one chunk into a region we may write to. A chunk of the tile itself was finished and checked by a second
+     * peer, and everything already in such a region is ours (the game has never opened it), so it wins even over an equally
+     * finished chunk that arrived earlier as another tile's halo, which nobody checked. Frontier chunks are unchecked and only
+     * ever replace a less advanced chunk.
+     */
+    public static boolean shouldWrite(boolean verifiedTileChunk, String existing, String incoming) {
+        if (rank(incoming) < 0) {
+            return false;
+        }
+        return verifiedTileChunk || replaces(existing, incoming);
+    }
+
+    /**
      * @param anyFile  any of the region, entities or poi files exists
      * @param ours     an earlier install created this region
      * @param touched  the game opened it at least once since (this session or a recorded earlier one)

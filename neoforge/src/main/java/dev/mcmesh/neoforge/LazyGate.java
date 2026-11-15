@@ -7,16 +7,20 @@ public final class LazyGate {
     private LazyGate() { }
 
     public static void before(Path folder, int cx, int cz) {
-        LazyWorld w = LazyWorld.active;
-        if (w == null) {
-            return;
-        }
         String kind = folder.getFileName().toString();
         if (!kind.equals("region") && !kind.equals("entities") && !kind.equals("poi")) {
             return;
         }
         String dim = MeshTap.dimOf(folder.getParent());
-        if (dim != null) {
+        if (dim == null) {
+            return;
+        }
+        // a region the game has opened is never written to by a tile install, so it is recorded before the game gets in
+        if (dim.equals("minecraft:overworld")) {
+            TileInstall.touch(cx >> 5, cz >> 5);
+        }
+        LazyWorld w = LazyWorld.active;
+        if (w != null) {
             w.guard(dim, cx, cz);
         }
     }

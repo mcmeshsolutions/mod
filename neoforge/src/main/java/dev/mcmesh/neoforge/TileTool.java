@@ -1,26 +1,16 @@
 package dev.mcmesh.neoforge;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.NbtAccounter;
-import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.Tag;
-import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.chunk.storage.RegionFile;
-import net.minecraft.world.level.chunk.storage.RegionStorageInfo;
 
 /**
  * Research: moves chunks between two world folders and measures the seam. `install` copies a chunk rectangle (terrain,
@@ -38,6 +28,9 @@ public final class TileTool {
         switch (a[0]) {
             case "install" -> install(Path.of(a[1]), Path.of(a[2]), rect(a, 3), a.length > 7 && a[7].equals("strict"));
             case "compare" -> compare(Path.of(a[1]), Path.of(a[2]), rect(a, 3), Integer.parseInt(a[7]));
+            case "digest" -> digest(Path.of(a[1]), Path.of(a[2]), rect(a, 3));
+            case "selftest" -> System.exit(TileSelfTest.run());
+            case "entity-diff" -> entityDiff(Path.of(a[1]), Path.of(a[2]), Integer.parseInt(a[3]), Integer.parseInt(a[4]));
             default -> throw new IllegalArgumentException("install <src> <dst> x1 z1 x2 z2 | compare <a> <b> x1 z1 x2 z2 rings");
         }
     }
@@ -46,59 +39,10 @@ public final class TileTool {
         return new int[] {Integer.parseInt(a[from]), Integer.parseInt(a[from + 1]), Integer.parseInt(a[from + 2]), Integer.parseInt(a[from + 3])};
     }
 
-    /** The open region files of one world folder, keyed by path, so a rectangle does not reopen a file per chunk. */
-    private static final class World implements AutoCloseable {
-        private final Path root;
-        private final Map<String, RegionFile> open = new HashMap<>();
-
-        World(Path run) {
-            this.root = run.resolve("world");
-        }
-
-        private RegionFile file(String kind, int cx, int cz, boolean create) throws IOException {
-            Path dir = root.resolve(kind);
-            Path f = dir.resolve("r." + (cx >> 5) + "." + (cz >> 5) + ".mca");
-            RegionFile rf = open.get(f.toString());
-            if (rf == null) {
-                if (!create && !Files.exists(f)) {
-                    return null;
-                }
-                Files.createDirectories(dir);
-                rf = new RegionFile(new RegionStorageInfo("tile", Level.OVERWORLD, kind), f, dir, false);
-                open.put(f.toString(), rf);
-            }
-            return rf;
-        }
-
-        CompoundTag read(String kind, int cx, int cz) throws IOException {
-            RegionFile rf = file(kind, cx, cz, false);
-            ChunkPos p = new ChunkPos(cx, cz);
-            if (rf == null || !rf.hasChunk(p)) {
-                return null;
-            }
-            try (DataInputStream in = rf.getChunkDataInputStream(p)) {
-                return in == null ? null : NbtIo.read(in, NbtAccounter.unlimitedHeap());
-            }
-        }
-
-        void write(String kind, int cx, int cz, CompoundTag tag) throws IOException {
-            try (DataOutputStream out = file(kind, cx, cz, true).getChunkDataOutputStream(new ChunkPos(cx, cz))) {
-                NbtIo.write(tag, out);
-            }
-        }
-
-        @Override
-        public void close() throws IOException {
-            for (RegionFile rf : open.values()) {
-                rf.close();
-            }
-        }
-    }
-
     private static void install(Path src, Path dst, int[] r, boolean strict) throws IOException {
         int[] copied = new int[KINDS.length];
         Map<String, Integer> statuses = new TreeMap<>();
-        try (World from = new World(src); World to = new World(dst)) {
+        try (RegionIo from = new RegionIo(src.resolve("world")); RegionIo to = new RegionIo(dst.resolve("world"))) {
             for (int cx = r[0]; cx <= r[2]; cx++) {
                 for (int cz = r[1]; cz <= r[3]; cz++) {
                     for (int k = 0; k < KINDS.length; k++) {
@@ -121,6 +65,66 @@ public final class TileTool {
             System.out.println("WARNING: " + (span - copied[0]) + " chunks had no terrain entry in the source, the install is incomplete");
             System.exit(3);
         }
+    }
+
+    /** The entities of one chunk in two worlds, one per line, so what differs can be read off. */
+    private static void entityDiff(Path a, Path b, int cx, int cz) throws IOException {
+        try (RegionIo wa = new RegionIo(a.resolve("world")); RegionIo wb = new RegionIo(b.resolve("world"))) {
+            for (var w : List.of(wa, wb)) {
+                CompoundTag e = CanonicalChunk.entities(w.read("entities", cx, cz));
+                System.out.println(w == wa ? "A:" : "B:");
+                ListTag l = e.getList("Entities", 10);
+                for (int i = 0; i < l.size(); i++) {
+                    System.out.println("  " + l.getCompound(i));
+                }
+            }
+        }
+    }
+
+    /** How many chunks of a rectangle have the same canonical digest in two worlds, which is what two workers would report to the gateway. */
+    private static void digest(Path a, Path b, int[] r) throws IOException {
+        long same = 0;
+        long different = 0;
+        long missing = 0;
+        Map<String, Integer> parts = new TreeMap<>();
+        List<byte[]> da = new ArrayList<>();
+        List<byte[]> db = new ArrayList<>();
+        String example = null;
+        try (RegionIo wa = new RegionIo(a.resolve("world")); RegionIo wb = new RegionIo(b.resolve("world"))) {
+            for (int cx = r[0]; cx <= r[2]; cx++) {
+                for (int cz = r[1]; cz <= r[3]; cz++) {
+                    CompoundTag ra = wa.read("region", cx, cz);
+                    CompoundTag rb = wb.read("region", cx, cz);
+                    if (ra == null || rb == null) {
+                        missing++;
+                        continue;
+                    }
+                    CompoundTag ea = wa.read("entities", cx, cz);
+                    CompoundTag eb = wb.read("entities", cx, cz);
+                    CompoundTag pa = wa.read("poi", cx, cz);
+                    CompoundTag pb = wb.read("poi", cx, cz);
+                    byte[] x = CanonicalChunk.digest(ra, ea, pa);
+                    byte[] y = CanonicalChunk.digest(rb, eb, pb);
+                    da.add(x);
+                    db.add(y);
+                    if (java.util.Arrays.equals(x, y)) {
+                        same++;
+                        continue;
+                    }
+                    different++;
+                    String why = !CanonicalChunk.region(ra).equals(CanonicalChunk.region(rb)) ? "terrain" : !CanonicalChunk.entities(ea).equals(CanonicalChunk.entities(eb)) ? "entities" : "poi";
+                    parts.merge(why, 1, Integer::sum);
+                    if (example == null) {
+                        example = cx + "," + cz + " (" + why + ")";
+                    }
+                }
+            }
+        }
+        System.out.println("canonical digests: " + same + " same, " + different + " different, " + missing + " chunks missing on a side; differing part " + parts);
+        if (example != null) {
+            System.out.println("first differing chunk: " + example);
+        }
+        System.out.println("tile digest A " + CanonicalChunk.hex(CanonicalChunk.tile(da)).substring(0, 16) + " B " + CanonicalChunk.hex(CanonicalChunk.tile(db)).substring(0, 16));
     }
 
     /** Compare with the fields that legitimately differ per run removed. */
@@ -172,7 +176,7 @@ public final class TileTool {
         }
         String[] example = new String[1];
         Map<Integer, Integer> depthOfBlockDiffs = new TreeMap<>();
-        try (World wa = new World(a); World wb = new World(b)) {
+        try (RegionIo wa = new RegionIo(a.resolve("world")); RegionIo wb = new RegionIo(b.resolve("world"))) {
             for (int cx = tile[0] - rings; cx <= tile[2] + rings; cx++) {
                 for (int cz = tile[1] - rings; cz <= tile[3] + rings; cz++) {
                     int ring = Math.max(Math.max(tile[0] - cx, cx - tile[2]), Math.max(tile[1] - cz, cz - tile[3]));

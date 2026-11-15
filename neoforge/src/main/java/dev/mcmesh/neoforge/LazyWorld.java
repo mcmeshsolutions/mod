@@ -154,6 +154,12 @@ final class LazyWorld {
         return java.util.Set.copyOf(pending.keySet());
     }
 
+    /** True while a lazy bootstrap still owes this region to the gateway; it overwrites whatever is on disk when it arrives. */
+    static boolean owes(String dim, int rx, int rz) {
+        LazyWorld w = active;
+        return w != null && w.pending.containsKey(LazyPlan.regionKey(dim, rx << 5, rz << 5));
+    }
+
     /** Called by the region storage before it opens any region file. Blocks until the region is on disk. */
     void guard(String dim, int cx, int cz) {
         String key = LazyPlan.regionKey(dim, cx, cz);

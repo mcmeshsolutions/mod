@@ -28,6 +28,16 @@ class TileMergeTest {
     }
 
     @Test
+    void aCheckedTileChunkWinsButTheFrontierNeverDowngrades() {
+        assertTrue(TileMerge.shouldWrite(true, "minecraft:full", "minecraft:full"), "the verified version beats an unchecked halo of the same status");
+        assertTrue(TileMerge.shouldWrite(true, null, "minecraft:full"));
+        assertFalse(TileMerge.shouldWrite(false, "minecraft:full", "minecraft:full"), "unchecked chunks never replace an equal one");
+        assertFalse(TileMerge.shouldWrite(false, "minecraft:full", "minecraft:carvers"));
+        assertTrue(TileMerge.shouldWrite(false, "minecraft:biomes", "minecraft:carvers"));
+        assertFalse(TileMerge.shouldWrite(true, "minecraft:full", "mod:custom"), "a status we do not understand is never installed, checked or not");
+    }
+
+    @Test
     void aChunkWeDoNotUnderstandIsNeverInstalled() {
         assertFalse(TileMerge.replaces(null, "minecraft:something_new"));
         assertFalse(TileMerge.replaces("minecraft:biomes", null));

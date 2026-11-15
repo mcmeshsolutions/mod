@@ -23,6 +23,13 @@ public final class MeshEvents {
     }
 
     @SubscribeEvent
+    public static void tileWorkerStart(ServerStartedEvent e) {
+        if (TileWorker.enabled() && e.getServer().isDedicatedServer()) {
+            TileWorker.start(e.getServer());
+        }
+    }
+
+    @SubscribeEvent
     public static void islandProbeStart(ServerStartedEvent e) {
         IslandProbe.start(e.getServer());
     }
@@ -247,6 +254,9 @@ public final class MeshEvents {
             }
             if (e.getServer().getTickCount() % 1200 == 0) {
                 BanSync.refresh(e.getServer(), hosting);
+            }
+            if (e.getServer().getTickCount() % 600 == 300) {
+                TileHost.tick(e.getServer(), hosting);
             }
         } else {
             LoadShed.restore(e.getServer());

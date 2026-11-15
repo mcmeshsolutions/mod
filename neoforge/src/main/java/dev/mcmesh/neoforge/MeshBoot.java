@@ -27,6 +27,10 @@ public final class MeshBoot {
     }
 
     public static void beforeWorldLoad(Path universe) {
+        if (TileWorker.enabled()) {
+            // a worldgen worker generates one tile for a host and must never take the world's lease
+            return;
+        }
         if (MeshConfig.WORLD.get().isEmpty()) {
             return;
         }

@@ -10,6 +10,10 @@ public final class MeshTap {
         root = r;
     }
 
+    static java.nio.file.Path root() {
+        return root;
+    }
+
     public static String dimOf(java.nio.file.Path dimDir) {
         java.nio.file.Path r = root;
         return r == null || dimDir == null ? null : dev.mcmesh.core.WorldPaths.dimOf(r, dimDir);

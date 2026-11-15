@@ -596,4 +596,10 @@ public final class GatewayClient {
     public void worldgenConsumed(String world, long tile) throws IOException, GatewayException {
         post("/v1/worlds/" + world + "/worldgen/tiles/" + tile + "/consumed", new JsonObject());
     }
+
+    /** Settings and tile counts (queued, ready, rejected, consumed), plus the last disagreements between workers. */
+    public JsonObject worldgenState(String world) throws IOException, GatewayException {
+        byte[] r = exec("/v1/worlds/" + world + "/worldgen", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
+        return JsonParser.parseString(new String(r)).getAsJsonObject();
+    }
 }
