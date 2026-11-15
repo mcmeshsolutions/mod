@@ -338,6 +338,71 @@ public final class GatewayClient {
         };
     }
 
+    /** A shard lease (id sh_...) has its own routes, with the same bodies as a main lease's. */
+    public static String leasePath(String lease) {
+        return lease.startsWith("sh_") ? "/v1/shards/" + lease : "/v1/leases/" + lease;
+    }
+
+    public record ShardGrant(Lease lease, java.util.List<ShardRegion> regions) { }
+
+    public record ShardLive(String id, String device, java.util.List<ShardRegion> regions) { }
+
+    private static JsonArray regionsJson(java.util.List<ShardRegion> regions) {
+        JsonArray a = new JsonArray();
+        for (ShardRegion r : regions) {
+            JsonObject o = new JsonObject();
+            o.addProperty("dim", r.dim());
+            o.addProperty("x1", r.x1());
+            o.addProperty("z1", r.z1());
+            o.addProperty("x2", r.x2());
+            o.addProperty("z2", r.z2());
+            a.add(o);
+        }
+        return a;
+    }
+
+    private static java.util.List<ShardRegion> regionsOf(JsonArray a) {
+        java.util.List<ShardRegion> out = new ArrayList<>();
+        for (JsonElement e : a) {
+            JsonObject o = e.getAsJsonObject();
+            out.add(new ShardRegion(o.get("dim").getAsString(), o.get("x1").getAsInt(), o.get("z1").getAsInt(), o.get("x2").getAsInt(), o.get("z2").getAsInt()));
+        }
+        return out;
+    }
+
+    /** The main host sets regions aside for another machine, together with the players who are in them. */
+    public long shardOffer(String world, java.util.List<ShardRegion> regions, java.util.List<String> players) throws IOException, GatewayException {
+        JsonObject b = new JsonObject();
+        b.add("regions", regionsJson(regions));
+        JsonArray p = new JsonArray();
+        players.forEach(p::add);
+        b.add("players", p);
+        return post("/v1/worlds/" + world + "/shards", b).get("offer").getAsLong();
+    }
+
+    /** Live shards of a world; the offers are not included. */
+    public java.util.List<ShardLive> shards(String world) throws IOException, GatewayException {
+        byte[] r = exec("/v1/worlds/" + world + "/shards", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
+        java.util.List<ShardLive> out = new ArrayList<>();
+        for (JsonElement e : JsonParser.parseString(new String(r)).getAsJsonObject().getAsJsonArray("shards")) {
+            JsonObject o = e.getAsJsonObject();
+            out.add(new ShardLive(o.get("id").getAsString(), o.get("device").getAsString(), regionsOf(o.getAsJsonArray("regions"))));
+        }
+        return out;
+    }
+
+    /** Takes the oldest open offer of the world, or null when there is none. */
+    public ShardGrant shardClaim(String world) throws IOException, GatewayException {
+        JsonElement g = post("/v1/worlds/" + world + "/shards/claim", new JsonObject()).get("grant");
+        if (g == null || g.isJsonNull()) {
+            return null;
+        }
+        JsonObject o = g.getAsJsonObject();
+        Lease l = new Lease(o.get("id").getAsString(), o.get("epoch").getAsLong(), o.get("ttl_s").getAsInt(), o.get("heartbeat_s").getAsInt(),
+                o.get("ttl_s").getAsInt() * 3 / 4, o.get("base_rev").getAsString(), Base64.getUrlDecoder().decode(o.get("hmac_key").getAsString()));
+        return new ShardGrant(l, regionsOf(o.getAsJsonArray("regions")));
+    }
+
     private static JsonObject epoch(long epoch) {
         JsonObject o = new JsonObject();
         o.addProperty("epoch", epoch);
@@ -372,7 +437,7 @@ public final class GatewayClient {
         if (load >= 0) {
             body.addProperty("load", load);
         }
-        JsonObject r = post("/v1/leases/" + lease + "/heartbeat", body);
+        JsonObject r = post(leasePath(lease) + "/heartbeat", body);
         List<String> targets = new ArrayList<>();
         List<String> names = new ArrayList<>();
         JsonArray dirs = r.getAsJsonArray("directives");
@@ -425,7 +490,7 @@ public final class GatewayClient {
     }
 
     public void hostReady(String lease, long epoch) throws IOException, GatewayException {
-        post("/v1/leases/" + lease + "/host-ready", epoch(epoch));
+        post(leasePath(lease) + "/host-ready", epoch(epoch));
     }
 
     public void release(String lease, long epoch, boolean guestsPresent) throws IOException, GatewayException {
@@ -439,7 +504,7 @@ public final class GatewayClient {
         o.addProperty("base_rev", baseRev);
         o.addProperty("kind", kind);
         o.addProperty("final", last);
-        JsonObject r = post("/v1/leases/" + lease + "/commit", o);
+        JsonObject r = post(leasePath(lease) + "/commit", o);
         return new Revision(r.get("rev_id").getAsString(), r.get("parent").getAsString(), r.get("seq").getAsLong());
     }
 
@@ -459,7 +524,7 @@ public final class GatewayClient {
         }
         JsonObject body = epoch(epoch);
         body.add("frames", arr);
-        return post("/v1/leases/" + lease + "/wal", body).get("next_seq").getAsLong();
+        return post(leasePath(lease) + "/wal", body).get("next_seq").getAsLong();
     }
 
     /** Uploads raw bytes under their SHA-256; returns the hash. */

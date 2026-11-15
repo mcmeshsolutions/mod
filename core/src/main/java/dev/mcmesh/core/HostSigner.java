@@ -95,7 +95,7 @@ public final class HostSigner {
         if (sig != null) {
             o.addProperty("sig", sig);
         }
-        HttpResponse<String> r = call("POST", "/v1/leases/" + lease + "/commit", o.toString());
+        HttpResponse<String> r = call("POST", GatewayClient.leasePath(lease) + "/commit", o.toString());
         if (r.statusCode() / 100 != 2) {
             throw new GatewayException(r.statusCode(), errorCode(r));
         }
