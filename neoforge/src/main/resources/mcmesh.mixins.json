@@ -11,7 +11,8 @@
     "MinecraftServerMixin",
     "PlayerListMixin",
     "BlockEntityTickMixin",
-    "EntityTickMixin"
+    "EntityTickMixin",
+    "BeehiveDecoratorMixin"
   ],
   "injectors": {
     "defaultRequire": 1

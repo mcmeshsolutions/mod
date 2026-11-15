@@ -283,7 +283,10 @@ public final class TileTool {
                     }
                     different++;
                     all.add(cx + "," + cz);
-                    String why = !CanonicalChunk.region(ra).equals(CanonicalChunk.region(rb)) ? "terrain" : !CanonicalChunk.entities(ea).equals(CanonicalChunk.entities(eb)) ? "entities" : "poi";
+                    boolean t = !CanonicalChunk.region(ra).equals(CanonicalChunk.region(rb));
+                    boolean e = !CanonicalChunk.entities(ea).equals(CanonicalChunk.entities(eb));
+                    boolean p = !(pa == null ? new CompoundTag() : pa).equals(pb == null ? new CompoundTag() : pb);
+                    String why = (t ? "terrain" : "") + (e ? "+entities" : "") + (p ? "+poi" : "") + (pa == null && pb != null ? "(poi only in B)" : pa != null && pb == null ? "(poi only in A)" : "");
                     parts.merge(why, 1, Integer::sum);
                     if (example == null) {
                         example = cx + "," + cz + " (" + why + ")";
