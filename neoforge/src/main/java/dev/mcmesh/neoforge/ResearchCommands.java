@@ -25,8 +25,17 @@ final class ResearchCommands {
 
     static void register(CommandDispatcher<CommandSourceStack> d) {
         d.register(Commands.literal("meshresearch").requires(s -> s.hasPermission(4))
+                .then(Commands.literal("sweep").executes(c -> {
+                    var server = c.getSource().getServer();
+                    java.nio.file.Path out = server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("mcmesh-islandcost.csv");
+                    Thread t = new Thread(() -> IslandCost.run(server, out), "mesh-islandcost");
+                    t.setDaemon(true);
+                    t.start();
+                    c.getSource().sendSuccess(() -> Component.literal("islandcost sweep started, results in " + out), false);
+                    return 1;
+                }))
                 .then(Commands.literal("status").executes(c -> {
-                    c.getSource().sendSuccess(() -> Component.literal("researchgen " + state), false);
+                    c.getSource().sendSuccess(() -> Component.literal("researchgen " + state + " | islandcost " + IslandCost.state()), false);
                     return 1;
                 }))
                 .then(Commands.literal("gen")

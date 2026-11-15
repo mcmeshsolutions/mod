@@ -42,6 +42,7 @@ public final class IslandTool {
 
         Map<String, IslandPlan.Tracker> trackers = new LinkedHashMap<>();
         Map<String, long[]> stats = new LinkedHashMap<>();   // samples, splitSamples, islandSum, maxIslands, contestedSamples
+        Map<String, Load> load = new LinkedHashMap<>();
         StringBuilder samplesJson = new StringBuilder("[");
         long biggest = 0;
         boolean firstSample = true;
@@ -56,15 +57,22 @@ public final class IslandTool {
                 String dim = dimEntry.getKey();
                 List<IslandPlan.Anchor> anchors = new ArrayList<>();
                 List<Row> pending = new ArrayList<>();
+                Map<Long, Integer> entities = new java.util.HashMap<>();
+                double mspt = -1;
                 for (Row r : dimEntry.getValue()) {
                     if (r.kind().equals("pending-region")) {
                         pending.add(r);
+                    } else if (r.kind().equals("mspt")) {
+                        mspt = Long.parseLong(r.id()) / 1000.0;
+                    } else if (r.kind().equals("entity")) {
+                        entities.merge(dev.mcmesh.core.WorldgenTiles.pack(r.x(), r.z()), Integer.parseInt(r.id()), Integer::sum);
                     } else {
                         anchors.add(new IslandPlan.Anchor(anchorId(r), r.x(), r.z()));
                     }
                 }
                 var islands = trackers.computeIfAbsent(dim, k -> new IslandPlan.Tracker()).update(anchors);
                 int contested = IslandPlan.contested(islands).size();
+                load.computeIfAbsent(dim, k -> new Load()).add(islands, entities, mspt);
                 long[] s = stats.computeIfAbsent(dim, k -> new long[5]);
                 s[0]++;
                 if (islands.size() > 1) {
@@ -114,6 +122,9 @@ public final class IslandTool {
                     e.getKey(), s[0], s[1], 100.0 * s[1] / s[0], (double) s[2] / s[0], s[3], t.merges(), t.splits(), s[4]);
         }
         System.out.println("largest island: " + biggest + " chunks");
+        for (var e : load.entrySet()) {
+            e.getValue().report(e.getKey());
+        }
         System.out.println("sharding only pays off where a dimension spends a large share of its samples above one island;");
         System.out.println("any contested chunk at all means the merge distance is wrong, not that the session was unusual.");
 
@@ -203,5 +214,78 @@ public final class IslandTool {
             }
         }
         return b.append('"').toString();
+    }
+
+    /** What a host was asked to tick and how long it took, per island, to say whether splitting would have helped. */
+    private static final class Load {
+        /** A host is over budget above this; the tick budget is 50 ms. */
+        static final double OVER_MS = 45;
+        /** Splitting only counts if the heaviest island is at most this share of the total. */
+        static final double WORTH_IT = 0.8;
+        static final double MICROS_PER_ENTITY = Double.parseDouble(System.getProperty("mcmesh.perEntityUs", "26"));
+        int samples;
+        int over;
+        int overAndSplit;
+        int overAndSplittable;
+        double msptSum;
+        double msptMax;
+        double predictedSum;
+        double hostAfterSplitSum;
+        long entitySum;
+        long entityMax;
+        final List<Double> mspts = new ArrayList<>();
+
+        void add(List<IslandPlan.Island> islands, Map<Long, Integer> entities, double mspt) {
+            if (mspt < 0) {
+                return;
+            }
+            samples++;
+            int total = 0;
+            int[] per = new int[islands.size() + 1];
+            for (var e : entities.entrySet()) {
+                total += e.getValue();
+                int owner = IslandPlan.ownerOf(islands, e.getKey());
+                per[owner >= 0 && owner < islands.size() ? owner : islands.size()] += e.getValue();
+            }
+            int heaviest = 0;
+            for (int i = 0; i < islands.size(); i++) {
+                heaviest = Math.max(heaviest, per[i]);
+            }
+            mspt = Math.max(mspt, 0);
+            msptSum += mspt;
+            msptMax = Math.max(msptMax, mspt);
+            mspts.add(mspt);
+            entitySum += total;
+            entityMax = Math.max(entityMax, total);
+            predictedSum += total * MICROS_PER_ENTITY / 1000.0;
+            if (mspt >= OVER_MS) {
+                over++;
+                if (islands.size() > 1) {
+                    overAndSplit++;
+                    if (heaviest <= WORTH_IT * total) {
+                        overAndSplittable++;
+                        hostAfterSplitSum += mspt * heaviest / Math.max(1, total);
+                    }
+                }
+            }
+        }
+
+        void report(String dim) {
+            if (samples == 0) {
+                return;
+            }
+            mspts.sort(null);
+            System.out.printf("%s load: tick time mean %.1f ms, p95 %.1f ms, max %.1f ms over %d samples; entities ticked mean %.0f, max %d%n", dim, msptSum / samples,
+                    mspts.get((int) Math.floor(0.95 * (samples - 1))), msptMax, samples, (double) entitySum / samples, entityMax);
+            System.out.printf("%s model check: %.0f microseconds per entity predicts %.1f ms per tick from the entity counts alone, the host measured %.1f ms%n", dim, MICROS_PER_ENTITY,
+                    predictedSum / samples, msptSum / samples);
+            System.out.printf("%s over budget (%.0f ms or more): %d of %d samples (%.1f%%); of those, more than one island %d, and splitting would have cut the heaviest host by at least %.0f%%: %d%n", dim, OVER_MS,
+                    over, samples, 100.0 * over / samples, overAndSplit, 100 * (1 - WORTH_IT), overAndSplittable);
+            if (overAndSplittable > 0) {
+                System.out.printf("%s in those, the heaviest island host would have run at about %.1f ms instead%n", dim, hostAfterSplitSum / overAndSplittable);
+            }
+            System.out.println(dim + (over == 0 ? " the host was never over budget, so sharding had nothing to fix in this session" : overAndSplittable == 0
+                    ? " the host was over budget but never in a way that splitting islands would have helped" : " sharding would have helped in " + overAndSplittable + " samples"));
+        }
     }
 }

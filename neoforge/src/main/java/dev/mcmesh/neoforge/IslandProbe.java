@@ -39,7 +39,7 @@ public final class IslandProbe {
             Writer w = Files.newBufferedWriter(file, StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
             if (fresh) {
-                w.write("# tick,dimension,kind,id,chunkX,chunkZ\n");
+                w.write("# tick,dimension,kind,id,chunkX,chunkZ  (kind mspt: id is the average tick time in microseconds; kind entity: id is how many entities are in that chunk)\n");
             }
             active = new IslandProbe(w);
             LOG.info("island probe recording to {}", file);
@@ -71,6 +71,20 @@ public final class IslandProbe {
             for (var player : server.getPlayerList().getPlayers()) {
                 p.line(tick, player.level().dimension().location().toString(), "player",
                         player.getGameProfile().getName(), player.blockPosition().getX() >> 4, player.blockPosition().getZ() >> 4);
+            }
+            // how hard the host was working, and where the entities it ticks were: what turns "players were apart" into "splitting would have helped"
+            p.line(tick, "minecraft:overworld", "mspt", String.valueOf(server.getAverageTickTimeNanos() / 1000), 0, 0);
+            for (ServerLevel level : server.getAllLevels()) {
+                java.util.Map<Long, Integer> perChunk = new java.util.HashMap<>();
+                for (var e : level.getAllEntities()) {
+                    if (!(e instanceof net.minecraft.world.entity.player.Player)) {
+                        perChunk.merge(e.chunkPosition().toLong(), 1, Integer::sum);
+                    }
+                }
+                String edim = level.dimension().location().toString();
+                for (var c : perChunk.entrySet()) {
+                    p.line(tick, edim, "entity", String.valueOf(c.getValue()), net.minecraft.world.level.ChunkPos.getX(c.getKey()), net.minecraft.world.level.ChunkPos.getZ(c.getKey()));
+                }
             }
             for (ServerLevel level : server.getAllLevels()) {
                 String dim = level.dimension().location().toString();
