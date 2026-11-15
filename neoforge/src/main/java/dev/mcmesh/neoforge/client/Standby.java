@@ -3,6 +3,7 @@ package dev.mcmesh.neoforge.client;
 import com.mojang.logging.LogUtils;
 import dev.mcmesh.core.GatewayClient;
 import dev.mcmesh.neoforge.MeshAuth;
+import dev.mcmesh.neoforge.MeshBoot;
 import dev.mcmesh.neoforge.MeshConfig;
 import dev.mcmesh.neoforge.MeshService;
 import java.nio.file.Path;
@@ -16,6 +17,7 @@ import org.slf4j.Logger;
 public final class Standby {
     private static final Logger LOG = LogUtils.getLogger();
     private static final long POLL_MS = 5_000;
+    private static final long WARM_SYNC_MS = 30_000;
     private static final long GRACE_MS = 150_000;
     private static volatile Thread running;
     private static volatile long switchUntil;
@@ -112,12 +114,17 @@ public final class Standby {
     private static void loop(GatewayClient.WorldInfo w) {
         Minecraft mc = Minecraft.getInstance();
         long lastUp = System.currentTimeMillis();
+        long lastWarm = 0;
         try {
             while (running == Thread.currentThread()) {
                 Thread.sleep(POLL_MS);
                 var screen = mc.screen;
                 if (mc.level != null || screen instanceof ConnectScreen) {
                     lastUp = System.currentTimeMillis();
+                    if (mc.level != null && mc.getSingleplayerServer() == null && MeshConfig.GUEST_WARM_SYNC.get() && lastUp - lastWarm > WARM_SYNC_MS) {
+                        lastWarm = lastUp;
+                        MeshBoot.warmSync(mc.gameDirectory.toPath().resolve("saves").resolve(HostFlow.saveName(w.id())).toAbsolutePath().normalize(), w.id());
+                    }
                 } else if (!(screen instanceof DisconnectedScreen || screen instanceof HandoverScreen)
                         || System.currentTimeMillis() - lastUp > GRACE_MS) {
                     if (screen instanceof HandoverScreen) {
