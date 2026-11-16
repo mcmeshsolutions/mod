@@ -19,6 +19,9 @@ public final class ClientHooks {
     @SubscribeEvent
     public static void init(ScreenEvent.Init.Post e) {
         WorkerPool.ensureStarted();
+        // the config is only guaranteed loaded by the time a screen opens; a static initializer ran before that and
+        // threw IllegalStateException on every single launch, so the check never actually happened
+        PackUpdate.start();
         if (e.getScreen() instanceof net.minecraft.client.gui.screens.multiplayer.JoinMultiplayerScreen m) {
             e.addListener(Button.builder(Component.literal("Shared Worlds"), b -> Minecraft.getInstance().setScreen(new SyncedWorldsScreen(m)))
                     .bounds(m.width - 104, 6, 100, 20).build());
@@ -41,7 +44,6 @@ public final class ClientHooks {
     }
 
     static {
-        PackUpdate.start();
         dev.mcmesh.neoforge.WhitelistNet.onState = s -> {
             var mc = Minecraft.getInstance();
             if (mc.screen instanceof WhitelistScreen w) {
