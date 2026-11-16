@@ -28,3 +28,19 @@ tasks.register('packBuilder', JavaExec) {
     mainClass = 'dev.mcmesh.core.PackBuilder'
     args = (project.findProperty('packArgs') ?: '').toString().split(' ').findAll { it }
 }
+
+// Standalone, cross-platform pre-launch updater (PrismLauncher "pre-launch command"): completely separate from
+// the modpack itself, so it can update mods/config and tune JVM memory before NeoForge even starts. Pure JDK
+// plus a bundled Gson (Minecraft normally supplies Gson, but nothing here runs inside Minecraft's classpath).
+tasks.register('standaloneUpdaterJar', Jar) {
+    archiveBaseName = 'mcmesh-updater'
+    archiveVersion = ''
+    archiveClassifier = ''
+    destinationDirectory = layout.buildDirectory.dir('updater')
+    manifest { attributes 'Main-Class': 'dev.mcmesh.core.PackPreLaunch' }
+    from(sourceSets.main.output)
+    from({ configurations.compileClasspath.filter { it.name.contains('gson') }.collect { zipTree(it) } }) {
+        exclude 'META-INF/**'
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}

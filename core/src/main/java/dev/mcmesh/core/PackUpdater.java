@@ -36,7 +36,9 @@ import java.util.concurrent.TimeUnit;
  * {@link PackSwap} moves the files into place after the game has exited. Blocking, call off the render thread.
  */
 public final class PackUpdater {
-    public record Settings(String packId, String installedVersion, String authorKey, String updateUrl, boolean autoUpdate, Path gameDir) { }
+    /** ownUpdaterVersion is the standalone updater's own build number, or 0 when it has none to self-update. */
+    public record Settings(String packId, String installedVersion, String authorKey, String updateUrl, boolean autoUpdate, Path gameDir,
+            int ownUpdaterVersion) { }
 
     public enum Outcome { DISABLED, UP_TO_DATE, STAGED, ALREADY_STAGED }
 
@@ -106,6 +108,9 @@ public final class PackUpdater {
         if (!s.packId().equals(str(m, "pack"))) {
             throw new Rejected("manifest is for another pack");
         }
+        if (s.ownUpdaterVersion() > 0) {
+            maybeStageSelfUpdate(m, base, s.gameDir(), s.ownUpdaterVersion());
+        }
         String version = str(m, "version");
         if (!PackCheck.valid(version) || !PackCheck.valid(s.installedVersion())) {
             throw new Rejected("bad version");
@@ -137,6 +142,16 @@ public final class PackUpdater {
             String p = e.getAsString();
             bad(PackSwap.badPath(s.gameDir(), p), p);
             remove.add(p);
+        }
+        List<String> patches = new ArrayList<>();
+        for (JsonElement e : arr(m, "patches")) {
+            JsonObject o = e.getAsJsonObject();
+            PackPatch.Op op = new PackPatch.Op(str(o, "op"), opt(o, "path"), opt(o, "from"), opt(o, "to"), opt(o, "pattern"), opt(o, "replace"));
+            String why = PackPatch.bad(s.gameDir(), op);
+            if (why != null) {
+                throw new Rejected(why + ": " + o);
+            }
+            patches.add(PackPatch.encode(op));
         }
 
         Path upd = PackSwap.updateDir(s.gameDir());
@@ -176,10 +191,61 @@ public final class PackUpdater {
         lines.add("version\t" + version);
         put.forEach(p -> lines.add("put\t" + p));
         remove.forEach(p -> lines.add("rm\t" + p));
+        patches.forEach(p -> lines.add("patch\t" + p));
         Path tmp = upd.resolve(PackSwap.READY + ".tmp");
         Files.write(tmp, lines, StandardCharsets.UTF_8);
         Files.move(tmp, ready, StandardCopyOption.REPLACE_EXISTING);
         return Outcome.STAGED;
+    }
+
+    /**
+     * The manifest may carry a newer build of the standalone updater itself (updaterVersion/updaterSha256/
+     * updaterSize/updaterUrl); when so, and it is newer than this process, stage it next to the pack update so
+     * PackPreLaunch can swap its own jar in on a later run once this one has exited and released the file.
+     */
+    private void maybeStageSelfUpdate(JsonObject m, URI base, Path gameDir, int ownVersion) throws IOException {
+        JsonElement uv = m.get("updaterVersion");
+        if (uv == null || !uv.isJsonPrimitive()) {
+            return;
+        }
+        int newVersion;
+        try {
+            newVersion = uv.getAsInt();
+        } catch (NumberFormatException e) {
+            throw new Rejected("bad updaterVersion");
+        }
+        if (newVersion <= ownVersion) {
+            return;
+        }
+        String hash = str(m, "updaterSha256");
+        if (!hash.matches("[0-9a-fA-F]{64}")) {
+            throw new Rejected("bad updaterSha256");
+        }
+        hash = hash.toLowerCase();
+        long size = m.get("updaterSize") != null ? m.get("updaterSize").getAsLong() : -1;
+        if (size < 0 || size > totalCap) {
+            throw new Rejected("bad or oversized updaterSize");
+        }
+        URI url = fileUrl(base, str(m, "updaterUrl"));
+
+        Path upd = PackSwap.updateDir(gameDir);
+        Path versionFile = upd.resolve("updater-pending.version");
+        try {
+            if (Files.isRegularFile(versionFile) && Integer.parseInt(Files.readString(versionFile).strip()) >= newVersion) {
+                return;
+            }
+        } catch (IOException | NumberFormatException ignored) {
+            // no usable marker: stage it again below
+        }
+        Files.createDirectories(upd);
+        Path part = upd.resolve("updater-pending.jar.part");
+        String got = download(url, size, part);
+        if (!got.equals(hash)) {
+            Files.deleteIfExists(part);
+            throw new Rejected("updater sha256 mismatch");
+        }
+        Files.move(part, upd.resolve("updater-pending.jar"), StandardCopyOption.REPLACE_EXISTING);
+        Files.writeString(versionFile, Integer.toString(newVersion), StandardCharsets.UTF_8);
     }
 
     private static String stagedVersion(Path ready) {
@@ -207,6 +273,12 @@ public final class PackUpdater {
             throw new Rejected("manifest field missing: " + k);
         }
         return e.getAsString();
+    }
+
+    /** Like {@link #str}, but null when the field is absent instead of rejecting the manifest. */
+    private static String opt(JsonObject o, String k) {
+        JsonElement e = o.get(k);
+        return e != null && e.isJsonPrimitive() ? e.getAsString() : null;
     }
 
     private static JsonArray arr(JsonObject o, String k) throws Rejected {

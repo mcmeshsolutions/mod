@@ -32,7 +32,7 @@ final class PackUpdate {
         Path game = FMLPaths.GAMEDIR.get();
         try {
             var s = new PackUpdater.Settings(MeshConfig.PACK_ID.get(), MeshConfig.packVersion(), MeshConfig.PACK_AUTHOR_KEY.get(),
-                    MeshConfig.PACK_UPDATE_URL.get(), MeshConfig.PACK_AUTO_UPDATE.get(), game);
+                    MeshConfig.PACK_UPDATE_URL.get(), MeshConfig.PACK_AUTO_UPDATE.get(), game, 0);
             var out = new PackUpdater().run(s);
             LOG.info("pack update check: {}", out);
         } catch (IOException e) {

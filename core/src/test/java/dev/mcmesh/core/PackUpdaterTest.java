@@ -107,7 +107,11 @@ class PackUpdaterTest {
     }
 
     PackUpdater.Settings settings(String key, boolean auto) {
-        return new PackUpdater.Settings("mypack", "1.0", key, root + "/pack.json", auto, game);
+        return settings(key, auto, 0);
+    }
+
+    PackUpdater.Settings settings(String key, boolean auto, int ownUpdaterVersion) {
+        return new PackUpdater.Settings("mypack", "1.0", key, root + "/pack.json", auto, game, ownUpdaterVersion);
     }
 
     PackUpdater updater() {
@@ -250,6 +254,60 @@ class PackUpdaterTest {
         assertThrows(java.io.IOException.class, () -> PackSwap.apply(game));
         assertEquals("A", Files.readString(game.resolve("mods/a.jar")));
         assertTrue(PackSwap.hasReady(game));
+    }
+
+    @Test
+    void manifestPatchDeletesAFileOnApply() throws Exception {
+        Files.writeString(game.resolve("config/old-key.toml"), "legacy=true");
+        JsonObject m = manifest("mypack", "1.1", file("mods/foo-2.jar", JAR, "files/foo.jar"));
+        JsonArray patches = new JsonArray();
+        JsonObject op = new JsonObject();
+        op.addProperty("op", "delete");
+        op.addProperty("path", "config/old-key.toml");
+        patches.add(op);
+        m.add("patches", patches);
+        publish(m, JAR);
+        assertEquals(PackUpdater.Outcome.STAGED, updater().run(settings(pub, true)));
+        assertTrue(Files.readString(game.resolve("mcmesh-update/ready.txt")).contains("patch\tdelete\t"));
+
+        PackSwap.apply(game);
+        assertFalse(Files.exists(game.resolve("config/old-key.toml")));
+        assertEquals("new jar bytes", Files.readString(game.resolve("mods/foo-2.jar")));
+    }
+
+    @Test
+    void manifestPatchWithUnsafePathIsRejected() throws Exception {
+        JsonObject m = manifest("mypack", "1.1", file("mods/foo-2.jar", JAR, "files/foo.jar"));
+        JsonArray patches = new JsonArray();
+        JsonObject op = new JsonObject();
+        op.addProperty("op", "delete");
+        op.addProperty("path", "../../evil");
+        patches.add(op);
+        m.add("patches", patches);
+        publish(m, JAR);
+        assertRejected("path outside mods/ and config/");
+    }
+
+    @Test
+    void newerUpdaterBuildIsStagedButOldOneIsIgnored() throws Exception {
+        byte[] newJar = "new updater jar bytes".getBytes(StandardCharsets.UTF_8);
+        served.put("/updater.jar", newJar);
+        JsonObject m = manifest("mypack", "1.0", file("mods/foo-2.jar", JAR, "files/foo.jar"));
+        m.addProperty("updaterVersion", 2);
+        m.addProperty("updaterSha256", sha(newJar));
+        m.addProperty("updaterSize", newJar.length);
+        m.addProperty("updaterUrl", "updater.jar");
+        publish(m, JAR);
+
+        // installedVersion equals manifest version (1.0), so the pack itself is UP_TO_DATE...
+        assertEquals(PackUpdater.Outcome.UP_TO_DATE, updater().run(settings(pub, true, 1)));
+        // ...but the self-update is independent and still staged
+        assertEquals("new updater jar bytes", Files.readString(game.resolve("mcmesh-update/updater-pending.jar")));
+        assertEquals("2", Files.readString(game.resolve("mcmesh-update/updater-pending.version")));
+
+        Files.delete(game.resolve("mcmesh-update/updater-pending.jar"));
+        assertEquals(PackUpdater.Outcome.UP_TO_DATE, updater().run(settings(pub, true, 2)));
+        assertFalse(Files.exists(game.resolve("mcmesh-update/updater-pending.jar")), "already-current updater should not be restaged");
     }
 
     @Test

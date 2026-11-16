@@ -41,6 +41,16 @@ public final class PackBuilder {
      * @param previous a manifest.json of the last release, or null; files in it that are gone now go into `remove`
      */
     public static Built build(Path packDir, String packId, String version, IdentityKey key, Path outDir, Path previous) throws IOException {
+        return build(packDir, packId, version, key, outDir, previous, null, 0);
+    }
+
+    /**
+     * @param previous a manifest.json of the last release, or null; files in it that are gone now go into `remove`
+     * @param updaterJar mcmesh-updater.jar to embed for self-update, or null to leave the manifest without one
+     * @param updaterVersion the embedded jar's build number; required (and must increase release over release) when updaterJar is set
+     */
+    public static Built build(Path packDir, String packId, String version, IdentityKey key, Path outDir, Path previous,
+            Path updaterJar, int updaterVersion) throws IOException {
         if (!packId.matches("[A-Za-z0-9._-]{1,64}")) {
             throw new IllegalArgumentException("pack id must be 1 to 64 characters of letters, digits, dot, dash, underscore");
         }
@@ -107,6 +117,18 @@ public final class PackBuilder {
         m.addProperty("version", version);
         m.add("files", files);
         m.add("remove", remove);
+        if (updaterJar != null) {
+            if (updaterVersion <= 0) {
+                throw new IllegalArgumentException("updaterVersion must be a positive, increasing build number when embedding an updater jar");
+            }
+            m.addProperty("updaterVersion", updaterVersion);
+            m.addProperty("updaterSha256", sha256(updaterJar));
+            m.addProperty("updaterSize", Files.size(updaterJar));
+            m.addProperty("updaterUrl", relativeUrl("updater/mcmesh-updater.jar"));
+            Path dst = outDir.resolve("updater/mcmesh-updater.jar");
+            Files.createDirectories(dst.getParent());
+            Files.copy(updaterJar, dst, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
         byte[] manifest = m.toString().getBytes(StandardCharsets.UTF_8);
         if (manifest.length > MANIFEST_MAX) {
             throw new IOException("manifest is " + manifest.length + " bytes, the client accepts at most " + MANIFEST_MAX);
@@ -128,6 +150,30 @@ public final class PackBuilder {
             }
         }
         return false;
+    }
+
+    /** So a release that ships an updater also tells whoever is packaging the instance how to wire it in. */
+    private static void writeSetupInstructions(Path outDir, String packId) throws IOException {
+        String text = """
+                # Preconfiguring a PrismLauncher instance with the mcmesh updater
+
+                1. Copy updater/mcmesh-updater.jar into the instance's root folder (the one that contains
+                   `minecraft/` or `.minecraft/`, next to instance.cfg) - NOT into mods/ or .minecraft/.
+                2. Instance Settings -> Custom Commands -> check "Enable custom commands" and set
+                   "Pre-launch command" to (one line, keep the quotes exactly as shown):
+
+                   "$INST_JAVA" -jar "$INST_DIR/mcmesh-updater.jar" "$INST_MC_DIR" %s <packAuthorKey> <packUpdateUrl>
+
+                   PrismLauncher substitutes $INST_JAVA/$INST_DIR/$INST_MC_DIR itself; this is the same on
+                   Windows and Linux since Prism runs `java` directly, not a shell script.
+                3. Ship the instance with that pre-launch command and the jar already in place so players never
+                   have to configure anything - the updater runs once before every launch, applies any pending
+                   mods/config diff and breaking-change patch, tunes the JVM heap for that machine, and quietly
+                   does nothing (exit 0) if the gateway is unreachable.
+                4. The updater can replace itself: ship a new build by passing it to `packBuilder build` again
+                   with a higher version number as the last argument; players get it automatically, no reinstall.
+                """.formatted(packId);
+        Files.writeString(outDir.resolve("SETUP.md"), text, StandardCharsets.UTF_8);
     }
 
     private static String relativeUrl(String path) throws IOException {
@@ -161,13 +207,25 @@ public final class PackBuilder {
             System.out.println("Keep " + a[1] + " private; it signs every release of this pack.");
             return;
         }
-        if ((a.length == 6 || a.length == 7) && a[0].equals("build")) {
-            Built b = build(Path.of(a[1]), a[2], a[3], IdentityKey.loadOrCreate(Path.of(a[4])), Path.of(a[5]), a.length == 7 ? Path.of(a[6]) : null);
-            System.out.println(b.files() + " files, " + b.bytes() + " bytes, " + b.removed().size() + " removed");
+        if (a.length >= 6 && a.length <= 9 && a[0].equals("build")) {
+            boolean hasUpdater = a.length == 8 || a.length == 9;
+            boolean hasPrevious = a.length == 7 || a.length == 9;
+            Path previous = hasPrevious ? Path.of(a[6]) : null;
+            Path updaterJar = hasUpdater ? Path.of(a[a.length - 2]) : null;
+            int updaterVersion = hasUpdater ? Integer.parseInt(a[a.length - 1]) : 0;
+            Built b = build(Path.of(a[1]), a[2], a[3], IdentityKey.loadOrCreate(Path.of(a[4])), Path.of(a[5]), previous, updaterJar, updaterVersion);
+            System.out.println(b.files() + " files, " + b.bytes() + " bytes, " + b.removed().size() + " removed"
+                    + (hasUpdater ? ", updater v" + updaterVersion + " embedded" : ""));
             System.out.println("Upload " + a[5] + " so that manifest.json is at your packUpdateUrl and files/ sits next to it.");
+            if (hasUpdater) {
+                System.out.println("Also upload " + a[5] + "/updater/mcmesh-updater.jar next to manifest.json.");
+                writeSetupInstructions(Path.of(a[5]), a[2]);
+                System.out.println("Wrote " + a[5] + "/SETUP.md: how to preconfigure a PrismLauncher instance to run the updater.");
+            }
             return;
         }
-        System.err.println("usage: PackBuilder keygen <keyfile>\n       PackBuilder build <packDir> <packId> <version> <keyfile> <outDir> [<previous manifest.json>]");
+        System.err.println("usage: PackBuilder keygen <keyfile>\n       PackBuilder build <packDir> <packId> <version> <keyfile> <outDir> "
+                + "[<previous manifest.json>] [<updater jar> <updater version>]");
         System.exit(2);
     }
 }

@@ -103,6 +103,31 @@ class PackBuilderTest {
     }
 
     @Test
+    void embeddingAnUpdaterJarAddsSelfUpdateFieldsAndShipsTheJarAndSetupDoc(@TempDir Path dir) throws Exception {
+        IdentityKey key = IdentityKey.generate();
+        Path updaterJar = dir.resolve("mcmesh-updater.jar");
+        Files.writeString(updaterJar, "fake updater jar bytes");
+        Path out = dir.resolve("out");
+        PackBuilder.Built b = PackBuilder.build(pack(dir), "mypack", "1.4.0", key, out, null, updaterJar, 3);
+
+        JsonObject m = JsonParser.parseString(new String(b.manifest(), StandardCharsets.UTF_8)).getAsJsonObject();
+        assertEquals(3, m.get("updaterVersion").getAsInt());
+        assertEquals("updater/mcmesh-updater.jar", m.get("updaterUrl").getAsString());
+        assertEquals(Files.size(updaterJar), m.get("updaterSize").getAsLong());
+        byte[] sha = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(updaterJar));
+        assertEquals(java.util.HexFormat.of().formatHex(sha), m.get("updaterSha256").getAsString());
+        assertEquals("fake updater jar bytes", Files.readString(out.resolve("updater/mcmesh-updater.jar")));
+    }
+
+    @Test
+    void embeddingAnUpdaterJarWithoutAPositiveVersionIsRejected(@TempDir Path dir) throws Exception {
+        IdentityKey key = IdentityKey.generate();
+        Path updaterJar = dir.resolve("mcmesh-updater.jar");
+        Files.writeString(updaterJar, "fake updater jar bytes");
+        assertThrows(IllegalArgumentException.class, () -> PackBuilder.build(pack(dir), "mypack", "1.0", key, dir.resolve("out"), null, updaterJar, 0));
+    }
+
+    @Test
     void keygenIsStableAcrossRuns(@TempDir Path dir) throws Exception {
         Path f = dir.resolve("author.key");
         String first = PackBuilder.publicKey(f);

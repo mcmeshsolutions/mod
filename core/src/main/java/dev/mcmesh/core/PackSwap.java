@@ -77,6 +77,7 @@ public final class PackSwap {
         String version = null;
         List<String> put = new ArrayList<>();
         List<String> rm = new ArrayList<>();
+        List<PackPatch.Op> patches = new ArrayList<>();
         for (String line : Files.readAllLines(upd.resolve(READY), StandardCharsets.UTF_8)) {
             String[] f = line.split("\t", 2);
             if (f.length != 2) {
@@ -86,7 +87,14 @@ public final class PackSwap {
                 case "version" -> version = f[1];
                 case "put" -> put.add(f[1]);
                 case "rm" -> rm.add(f[1]);
+                case "patch" -> patches.add(PackPatch.decode(f[1]));
                 default -> throw new IOException("bad ready file");
+            }
+        }
+        for (PackPatch.Op op : patches) {
+            String why = PackPatch.bad(game, op);
+            if (why != null) {
+                throw new IOException("unsafe patch op: " + why);
             }
         }
         if (versionOk(version) != null) {
@@ -132,6 +140,11 @@ public final class PackSwap {
                 Files.createDirectories(target.getParent());
                 Files.move(staged.resolve(p), target, StandardCopyOption.REPLACE_EXISTING);
                 placed.add(p);
+            }
+            // breaking-change mitigations the manifest asked for; rollback on failure is partial (see put/rm
+            // above) since delete/regex aren't naturally reversible, but every op stays inside mods/ or config/
+            for (PackPatch.Op op : patches) {
+                PackPatch.apply(game, op);
             }
             Path tmp = upd.resolve("installed.txt.tmp");
             Files.writeString(tmp, version, StandardCharsets.UTF_8);
