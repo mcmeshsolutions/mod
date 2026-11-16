@@ -218,6 +218,16 @@ final class LazyWorld {
         return java.util.Set.copyOf(pending.keySet());
     }
 
+    /** Regions already on disk, for the HUD. */
+    int done() {
+        return done;
+    }
+
+    /** Regions this bootstrap started with, for the HUD. */
+    int total() {
+        return total;
+    }
+
     /** True while a lazy bootstrap still owes this region to the gateway; it overwrites whatever is on disk when it arrives. */
     static boolean owes(String dim, int rx, int rz) {
         LazyWorld w = active;

@@ -161,6 +161,8 @@ public final class MeshEvents {
     }
 
     private static final java.util.Map<java.util.UUID, int[]> LAST_CHUNK = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<java.util.UUID, Long> LAST_WAIT_NOTICE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final long WAIT_NOTICE_COOLDOWN_MS = 15_000;
 
     @SubscribeEvent
     public static void lazyPrefetch(ServerTickEvent.Post e) {
@@ -169,12 +171,24 @@ public final class MeshEvents {
             return;
         }
         long now = System.currentTimeMillis();
+        var pending = w.pendingKeys();
         for (var p : e.getServer().getPlayerList().getPlayers()) {
             LAZY_TRACK.update(p.getStringUUID(), p.level().dimension().location().toString(), p.getX(), p.getZ(), now);
+            // the guard blocks the region read itself, so this is advance notice rather than the only signal
+            String here = dev.mcmesh.core.LazyPlan.regionKey(p.level().dimension().location().toString(),
+                    (int) Math.floor(p.getX()) >> 4, (int) Math.floor(p.getZ()) >> 4);
+            if (pending.contains(here)) {
+                Long last = LAST_WAIT_NOTICE.get(p.getUUID());
+                if (last == null || now - last > WAIT_NOTICE_COOLDOWN_MS) {
+                    LAST_WAIT_NOTICE.put(p.getUUID(), now);
+                    p.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                            "[mesh] Fetching the world near you from the gateway, this may stall the game briefly."));
+                }
+            }
         }
         // regions in the order the players will reach them, as far ahead as it takes to fetch a few of them
         double loadBlocks = Math.max(e.getServer().getPlayerList().getViewDistance(), e.getServer().getPlayerList().getSimulationDistance()) * 16.0 + 32;
-        w.prefetch(dev.mcmesh.core.LazyPlan.byArrival(LAZY_TRACK.movers(), w.pendingKeys(), loadBlocks, w.horizonS()));
+        w.prefetch(dev.mcmesh.core.LazyPlan.byArrival(LAZY_TRACK.movers(), pending, loadBlocks, w.horizonS()));
     }
 
     private static final dev.mcmesh.core.Arrival.Track LAZY_TRACK = new dev.mcmesh.core.Arrival.Track();

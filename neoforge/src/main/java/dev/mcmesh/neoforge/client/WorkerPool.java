@@ -41,6 +41,7 @@ public final class WorkerPool {
     private static Thread thread;
     private static volatile Process child;
     private static int failures;
+    private static volatile String status = "idle, waiting for demand";
 
     private WorkerPool() { }
 
@@ -52,6 +53,11 @@ public final class WorkerPool {
         thread.setDaemon(true);
         thread.start();
         Runtime.getRuntime().addShutdownHook(new Thread(WorkerPool::stopChild, "mesh-worker-exit"));
+    }
+
+    /** One line for the HUD; only meaningful while contributeWorldgen is on. */
+    public static String status() {
+        return status;
     }
 
     private static void stopChild() {
@@ -69,11 +75,16 @@ public final class WorkerPool {
         try {
             Thread.sleep(POLL_MS);
             while (failures < GIVE_UP_AFTER) {
-                if (MeshConfig.CONTRIBUTE_WORLDGEN.get() && !busyHosting()) {
+                if (busyHosting()) {
+                    status = "idle, this machine is hosting";
+                } else if (MeshConfig.CONTRIBUTE_WORLDGEN.get()) {
                     round();
+                } else {
+                    status = "off";
                 }
                 Thread.sleep(POLL_MS);
             }
+            status = "stopped after " + failures + " failed starts, see mcmesh-worker/logs/worker.log";
             LOG.warn("worldgen worker: giving up for this session after {} failed starts, see mcmesh-worker/logs/worker.log", failures);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -86,6 +97,7 @@ public final class WorkerPool {
             var gw = new dev.mcmesh.core.GatewayClient(MeshConfig.API_URL.get(), id.token());
             var demand = gw.worldgenDemand();
             if (demand.isEmpty()) {
+                status = "idle, waiting for demand";
                 return;
             }
             Minecraft mc = Minecraft.getInstance();
@@ -96,6 +108,7 @@ public final class WorkerPool {
                 return;
             }
             child = p;
+            status = "generating a tile";
             LOG.info("worldgen worker started for a tile (seed {}), log in {}", demand.get(0).seed(), dir.resolve("logs").resolve("worker.log"));
             while (p.isAlive()) {
                 if (busyHosting() || !MeshConfig.CONTRIBUTE_WORLDGEN.get()) {
@@ -117,6 +130,7 @@ public final class WorkerPool {
             } else {
                 failures = 0;
             }
+            status = "idle, waiting for demand";
         } catch (InterruptedException e) {
             throw e;
         } catch (Exception e) {

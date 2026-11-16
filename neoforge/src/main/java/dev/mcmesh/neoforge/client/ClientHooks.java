@@ -157,9 +157,30 @@ public final class ClientHooks {
             }
             DebugMap.renderOverlay(e.getGuiGraphics());
             var health = HostHealthHud.line();
+            var g = e.getGuiGraphics();
+            var f = Minecraft.getInstance().font;
+            int w = g.guiWidth();
             if (health != null) {
-                var f = Minecraft.getInstance().font;
-                e.getGuiGraphics().drawString(f, health.text(), e.getGuiGraphics().guiWidth() - f.width(health.text()) - 6, 18, health.color(), true);
+                g.drawString(f, health.text(), w - f.width(health.text()) - 6, 18, health.color(), true);
+            }
+            int[] lazy = dev.mcmesh.neoforge.LazyStatus.progress();
+            if (lazy != null && lazy[1] > 0) {
+                String t = String.format("World sync: %,d / %,d regions", lazy[0], lazy[1]);
+                g.drawString(f, t, w - f.width(t) - 6, 30, 0xFFAAAAAA, true);
+                int bw = 150;
+                int x0 = w - bw - 6;
+                int y0 = 42;
+                double frac = Math.min(1.0, lazy[0] / (double) lazy[1]);
+                g.fill(x0, y0, x0 + bw, y0 + 6, 0xFF2A2A2A);
+                g.fill(x0, y0, x0 + (int) (bw * frac), y0 + 6, 0xFF55AAFF);
+            }
+            if (dev.mcmesh.neoforge.MeshConfig.CONTRIBUTE_WORLDGEN.get()) {
+                String ws = "Worldgen helper: " + WorkerPool.status();
+                g.drawString(f, ws, w - f.width(ws) - 6, 54, 0xFF888888, true);
+            }
+            if (dev.mcmesh.neoforge.SyncProgress.active()) {
+                int bw = 150;
+                dev.mcmesh.neoforge.SyncProgress.draw(g, f, w - bw / 2 - 6, 64, bw);
             }
         } catch (RuntimeException ex) {
             // a status line must never take the frame down with it
