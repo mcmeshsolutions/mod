@@ -192,6 +192,23 @@ public final class GatewayClient {
         return identity(post("/v1/auth/key", b));
     }
 
+    /** Call while already logged in, to let another machine join this same identity instead of racing it for the name. */
+    public String linkCode() throws IOException, GatewayException {
+        return post("/v1/auth/link-code", new JsonObject()).get("code").getAsString();
+    }
+
+    /** Call on the new machine with a code from {@link #linkCode}: links this machine's key to that player and logs in as them. */
+    public Identity linkKey(IdentityKey key, String code) throws IOException, GatewayException {
+        String challenge = authChallenge();
+        Base64.Encoder enc = Base64.getUrlEncoder().withoutPadding();
+        JsonObject b = new JsonObject();
+        b.addProperty("challenge", challenge);
+        b.addProperty("code", code);
+        b.addProperty("pubkey", enc.encodeToString(key.publicRaw()));
+        b.addProperty("sig", enc.encodeToString(key.sign(challenge)));
+        return identity(post("/v1/auth/link", b));
+    }
+
     /** One-time, 60 s ticket the relay checks in the Minecraft handshake. */
     public record WorldInfo(String id, String name, String mcVersion, String role, String state, String host, long takeoverInS,
             boolean hostReady, long syncDone, long syncTotal, String packVersion) {

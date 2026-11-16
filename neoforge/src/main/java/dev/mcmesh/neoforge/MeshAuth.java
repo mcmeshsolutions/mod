@@ -30,6 +30,11 @@ public final class MeshAuth {
         return cached;
     }
 
+    /** Set after this machine's key was linked to an existing player (see SyncedWorldsScreen), instead of a normal login. */
+    public static synchronized void setCached(Identity id) {
+        cached = id;
+    }
+
     /** The token this machine hosts with: the configured static token (dedicated servers) or a login. */
     public static String token() throws Exception {
         String configured = MeshConfig.TOKEN.get();

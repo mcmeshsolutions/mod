@@ -20,7 +20,7 @@ public final class SyncedWorldsScreen extends Screen {
 
     private final Screen back;
     /** listing is null and error set when the gateway could not be reached. */
-    private record Group(Gateway gw, GatewayClient.Listing listing, String me, String error) { }
+    private record Group(Gateway gw, GatewayClient.Listing listing, String me, String error, boolean nameTaken) { }
 
     private volatile List<Group> groups = List.of();
     private volatile String message = "Contacting the gateway...";
@@ -41,14 +41,18 @@ public final class SyncedWorldsScreen extends Screen {
     private static Group fetch(Gateway g) {
         try {
             String me = Gateways.identity(g).name();
-            return new Group(g, Gateways.client(g).listWorlds(), me, null);
+            return new Group(g, Gateways.client(g).listWorlds(), me, null, false);
         } catch (Exception e) {
             LOG.warn("listing worlds on {} failed", g.host(), e);
             if (e instanceof GatewayException ge && ge.status == 401) {
                 Gateways.forget(g);
             }
+            boolean nameTaken = e instanceof GatewayException ge && ge.code.equals("NAME_TAKEN");
+            if (nameTaken) {
+                return new Group(g, null, "", "This name is already linked to another device on this gateway.", true);
+            }
             String why = e instanceof GatewayException ge ? dev.mcmesh.core.PackCheck.explain(ge, MeshConfig.PACK_ID.get()) : null;
-            return new Group(g, null, "", why != null ? why : e.getMessage() == null ? e.toString() : e.getMessage());
+            return new Group(g, null, "", why != null ? why : e.getMessage() == null ? e.toString() : e.getMessage(), false);
         }
     }
 
@@ -151,6 +155,7 @@ public final class SyncedWorldsScreen extends Screen {
                 .bounds(x + 120, y2, 60, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Web Panel"), b -> panel()).bounds(x + 184, y2, 64, 20).build());
         requestMods = addRenderableWidget(Button.builder(Component.literal("Request mods"), b -> requestMods()).bounds(x + 312, y1, 84, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Link device"), b -> linkDevice()).bounds(x + 396, y1, 90, 20).build());
         addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, b -> minecraft.setScreen(back)).bounds(x + 252, y2, 56, 20).build());
         fill();
     }
@@ -302,6 +307,31 @@ public final class SyncedWorldsScreen extends Screen {
                 net.minecraft.Util.getPlatform().openUri(url);
             });
             return "The panel opens signed in. Code " + code + " is on your clipboard too, it works once for 5 minutes.";
+        });
+    }
+
+    /** Already logged in: hand out a one-time code for another machine. Blocked on this gateway (NAME_TAKEN): take one instead. */
+    private void linkDevice() {
+        Group main = groups.isEmpty() ? null : groups.get(0);
+        if (main != null && main.nameTaken()) {
+            minecraft.setScreen(new PromptScreen(this, "Link this device", "Code from your other device", this::enterLinkCode));
+            return;
+        }
+        Gateway g = Gateways.main();
+        run("mesh-link-code", "Generating a link code...", () -> {
+            String code = Gateways.client(g).linkCode();
+            minecraft.execute(() -> minecraft.keyboardHandler.setClipboard(code));
+            return "Code " + code + " copied. On the other device, open Shared Worlds and press Link device, it works once for 5 minutes.";
+        });
+    }
+
+    private void enterLinkCode(String code) {
+        run("mesh-link", "Linking this device...", () -> {
+            var key = dev.mcmesh.core.IdentityKey.loadOrCreate(dev.mcmesh.neoforge.MeshAuth.keyFile());
+            var id = new GatewayClient(Gateways.main().apiUrl(), "").linkKey(key, code.strip());
+            dev.mcmesh.neoforge.MeshAuth.setCached(id);
+            refresh();
+            return "Linked as " + id.name() + ".";
         });
     }
 
