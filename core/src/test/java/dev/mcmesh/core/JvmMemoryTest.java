@@ -40,6 +40,22 @@ class JvmMemoryTest {
     }
 
     @Test
+    void applyToInstanceConfigInsertsMissingKeysInsideGeneralNotPastALaterSection() throws Exception {
+        Path cfg = game.resolve("instance.cfg");
+        Files.writeString(cfg, "[General]\nname=My Pack\n\n[UI]\nmods_Page\\Columns=\"abc\"\n");
+        JvmMemory.applyToInstanceConfig(cfg, new JvmMemory.Plan(4096, 1024, false, false));
+        List<String> out = Files.readAllLines(cfg, StandardCharsets.UTF_8);
+        int general = out.indexOf("[General]");
+        int ui = out.indexOf("[UI]");
+        assertTrue(general >= 0 && ui > general);
+        for (String key : new String[] {"OverrideMemory=true", "MaxMemAlloc=4096", "MinMemAlloc=1024", "OverrideJavaArgs=true"}) {
+            int idx = out.indexOf(key);
+            assertTrue(idx > general && idx < ui, key + " should land inside [General], not past [UI]: " + out);
+        }
+        assertTrue(out.indexOf("mods_Page\\Columns=\"abc\"") > ui, "the [UI] section itself must survive untouched");
+    }
+
+    @Test
     void applyToInstanceConfigIsANoOpWhenTheFileIsMissing() {
         JvmMemory.applyToInstanceConfig(game.resolve("instance.cfg"), new JvmMemory.Plan(4096, 1024, false, false));
         assertFalse(Files.exists(game.resolve("instance.cfg")));

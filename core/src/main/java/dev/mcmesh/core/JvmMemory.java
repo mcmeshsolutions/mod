@@ -178,7 +178,22 @@ final class JvmMemory {
             boolean userHasCustomArgs = lines.stream().anyMatch(l -> l.equals("OverrideJavaArgs=true"));
             List<String> out = new ArrayList<>();
             java.util.Set<String> handled = new java.util.HashSet<>();
-            for (String line : lines) {
+            // real instance.cfg files have more than just [General] (a [UI] section with column layouts is
+            // common), so a key missing from [General] must be inserted before the next section header, not
+            // appended past the end of the file where it would silently land inside a different section
+            int generalEnd = lines.size();
+            boolean inGeneral = false;
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i);
+                if (line.equals("[General]")) {
+                    inGeneral = true;
+                } else if (inGeneral && line.startsWith("[")) {
+                    generalEnd = i;
+                    break;
+                }
+            }
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i);
                 String key = line.contains("=") ? line.substring(0, line.indexOf('=')) : "";
                 switch (key) {
                     case "OverrideMemory" -> { out.add("OverrideMemory=true"); handled.add(key); }
@@ -188,22 +203,24 @@ final class JvmMemory {
                     case "JvmArgs" -> { out.add(userHasCustomArgs ? line : "JvmArgs=" + RECOMMENDED_GC_FLAGS); handled.add(key); }
                     default -> out.add(line);
                 }
-            }
-            if (!handled.contains("OverrideMemory")) {
-                out.add("OverrideMemory=true");
-            }
-            if (!handled.contains("MinMemAlloc")) {
-                out.add("MinMemAlloc=" + plan.xmsMb());
-            }
-            if (!handled.contains("MaxMemAlloc")) {
-                out.add("MaxMemAlloc=" + plan.xmxMb());
-            }
-            if (!userHasCustomArgs) {
-                if (!handled.contains("OverrideJavaArgs")) {
-                    out.add("OverrideJavaArgs=true");
-                }
-                if (!handled.contains("JvmArgs")) {
-                    out.add("JvmArgs=" + RECOMMENDED_GC_FLAGS);
+                if (i == generalEnd - 1) {
+                    if (!handled.contains("OverrideMemory")) {
+                        out.add("OverrideMemory=true");
+                    }
+                    if (!handled.contains("MinMemAlloc")) {
+                        out.add("MinMemAlloc=" + plan.xmsMb());
+                    }
+                    if (!handled.contains("MaxMemAlloc")) {
+                        out.add("MaxMemAlloc=" + plan.xmxMb());
+                    }
+                    if (!userHasCustomArgs) {
+                        if (!handled.contains("OverrideJavaArgs")) {
+                            out.add("OverrideJavaArgs=true");
+                        }
+                        if (!handled.contains("JvmArgs")) {
+                            out.add("JvmArgs=" + RECOMMENDED_GC_FLAGS);
+                        }
+                    }
                 }
             }
             Path tmp = instanceCfg.resolveSibling("instance.cfg.tmp");
