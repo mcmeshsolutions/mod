@@ -1,6 +1,7 @@
 package dev.mcmesh.neoforge.client;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.worldselection.SelectWorldScreen;
@@ -151,13 +152,27 @@ public final class ClientHooks {
 
     @SubscribeEvent
     public static void hud(net.neoforged.neoforge.client.event.RenderGuiEvent.Post e) {
+        if (HostHealthHud.joinedWorld(Minecraft.getInstance()) != null) {
+            HostFlow.guestAliveAt = System.currentTimeMillis();
+        }
+        if (dev.mcmesh.neoforge.MeshConfig.HUD_ALWAYS_VISIBLE.get()) {
+            drawStatusInfo(e.getGuiGraphics());
+        }
+        long left = Standby.remainingS();
+        if (left < 0) {
+            return;
+        }
+        var font = Minecraft.getInstance().font;
+        String text = left == 0 ? "Taking over hosting..." : String.format("Taking over hosting in %02d:%02d", left / 60, left % 60);
+        e.getGuiGraphics().drawString(font, text, e.getGuiGraphics().guiWidth() - font.width(text) - 6, 6, 0xFF55FF55, true);
+    }
+
+    /** Host/guest status, lazy bootstrap and worldgen progress, and the F9 debug map: routine info a player may
+     * find distracting during play, so it is also drawable from the pause screen instead (see hudAlwaysVisible). */
+    private static void drawStatusInfo(GuiGraphics g) {
         try {
-            if (HostHealthHud.joinedWorld(Minecraft.getInstance()) != null) {
-                HostFlow.guestAliveAt = System.currentTimeMillis();
-            }
-            DebugMap.renderOverlay(e.getGuiGraphics());
+            DebugMap.renderOverlay(g);
             var health = HostHealthHud.line();
-            var g = e.getGuiGraphics();
             var f = Minecraft.getInstance().font;
             int w = g.guiWidth();
             if (health != null) {
@@ -185,13 +200,6 @@ public final class ClientHooks {
         } catch (RuntimeException ex) {
             // a status line must never take the frame down with it
         }
-        long left = Standby.remainingS();
-        if (left < 0) {
-            return;
-        }
-        var font = Minecraft.getInstance().font;
-        String text = left == 0 ? "Taking over hosting..." : String.format("Taking over hosting in %02d:%02d", left / 60, left % 60);
-        e.getGuiGraphics().drawString(font, text, e.getGuiGraphics().guiWidth() - font.width(text) - 6, 6, 0xFF55FF55, true);
     }
 
     @SubscribeEvent
@@ -205,6 +213,9 @@ public final class ClientHooks {
         if (text != null) {
             var font = Minecraft.getInstance().font;
             e.getGuiGraphics().drawCenteredString(font, text, e.getScreen().width / 2, e.getScreen().height - 14, 0xFF8FD18F);
+        }
+        if (!dev.mcmesh.neoforge.MeshConfig.HUD_ALWAYS_VISIBLE.get()) {
+            drawStatusInfo(e.getGuiGraphics());
         }
     }
 
