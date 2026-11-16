@@ -296,12 +296,12 @@ public final class SyncedWorldsScreen extends Screen {
         Gateway g = target();
         run("mesh-panel", "Opening the web panel of " + g.host() + "...", () -> {
             String code = Gateways.client(g).panelCode();
-            String url = g.apiUrl() + "/panel";
+            String url = g.apiUrl() + "/panel#code=" + code;
             minecraft.execute(() -> {
                 minecraft.keyboardHandler.setClipboard(code);
                 net.minecraft.Util.getPlatform().openUri(url);
             });
-            return "Panel login code " + code + " copied. It works once for 5 minutes.";
+            return "The panel opens signed in. Code " + code + " is on your clipboard too, it works once for 5 minutes.";
         });
     }
 

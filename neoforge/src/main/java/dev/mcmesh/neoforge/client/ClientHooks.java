@@ -26,10 +26,8 @@ public final class ClientHooks {
             return;
         }
         if (e.getScreen() instanceof net.minecraft.client.gui.screens.TitleScreen t) {
-            e.addListener(Button.builder(Component.literal("Play Mesh"), b -> QuickPlay.start(t))
-                    .bounds(4, 4, 90, 20).build());
             e.addListener(Button.builder(Component.literal("Mesh settings"), b -> Minecraft.getInstance().setScreen(ConfigScreen.open(t)))
-                    .bounds(4, 28, 90, 20).build());
+                    .bounds(4, 4, 90, 20).build());
             e.addListener(Button.builder(Component.literal("Shared worlds"), b -> Minecraft.getInstance().setScreen(new SyncedWorldsScreen(t)))
                     .bounds(4, 28, 90, 20).build());
             return;
@@ -87,6 +85,28 @@ public final class ClientHooks {
         root.then(net.minecraft.commands.Commands.literal("no").executes(c -> vote("no")));
         root.executes(c -> vote("status"));
         e.getDispatcher().register(root);
+        e.getDispatcher().register(net.minecraft.commands.Commands.literal("meshpanel").executes(c -> panel()));
+    }
+
+    /** Opens the gateway's web panel in a browser, signed in, without leaving the world. */
+    private static int panel() {
+        Minecraft mc = Minecraft.getInstance();
+        Thread.ofVirtual().name("mesh-panel-cmd").start(() -> {
+            try {
+                String api = dev.mcmesh.neoforge.MeshConfig.API_URL.get();
+                String code = new dev.mcmesh.core.GatewayClient(api, dev.mcmesh.neoforge.MeshAuth.cached().token()).panelCode();
+                mc.execute(() -> {
+                    mc.keyboardHandler.setClipboard(code);
+                    net.minecraft.Util.getPlatform().openUri(api + "/panel#code=" + code);
+                });
+                say(mc, "Opening the web panel in your browser. The code " + code + " is on your clipboard if the page asks for it.");
+            } catch (dev.mcmesh.core.GatewayException ex) {
+                say(mc, "The gateway refused: " + ex.code);
+            } catch (Exception ex) {
+                say(mc, "Could not reach the gateway: " + ex.getMessage());
+            }
+        });
+        return 1;
     }
 
     /** Runs a vote action off the render thread and prints the answer in chat. */

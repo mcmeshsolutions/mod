@@ -55,6 +55,13 @@ public final class GatewayClient {
                     Thread.sleep(retryAfterMs(r));
                     continue;
                 }
+                // a proxy in front of the gateway turns a connection it dropped while idle into a 502/503/504 of its
+                // own, so the dropped-connection retry below never sees it; one blob put losing a whole autosave is
+                // worse than repeating a request that had no effect
+                if (idempotent && r.statusCode() >= 502 && r.statusCode() <= 504 && dropped++ < CONNECTION_RETRIES) {
+                    Thread.sleep(200L * dropped);
+                    continue;
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IOException("interrupted", e);
