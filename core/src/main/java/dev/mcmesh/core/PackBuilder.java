@@ -166,6 +166,12 @@ public final class PackBuilder {
 
                    PrismLauncher substitutes $INST_JAVA/$INST_DIR/$INST_MC_DIR itself; this is the same on
                    Windows and Linux since Prism runs `java` directly, not a shell script.
+
+                   If you are baking this into instance.cfg directly instead of through the UI (e.g. to ship
+                   a pre-configured instance.zip), escape every quote as \\" or Qt's QSettings strips them and
+                   the launch fails ("execve: No such file or directory") because the spaced paths get merged
+                   into one token:
+                   PreLaunchCommand=\\"$INST_JAVA\\" -jar \\"$INST_DIR/mcmesh-updater.jar\\" \\"$INST_MC_DIR\\"
                 3. Ship the instance with that pre-launch command and the jar already in place so players never
                    have to configure anything - the updater runs once before every launch, applies any pending
                    mods/config diff and breaking-change patch, tunes the JVM heap for that machine, and quietly
