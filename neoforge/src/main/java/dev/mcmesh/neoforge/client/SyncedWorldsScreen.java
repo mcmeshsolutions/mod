@@ -24,6 +24,7 @@ public final class SyncedWorldsScreen extends Screen {
 
     private volatile List<Group> groups = List.of();
     private volatile String message = "Contacting the gateway...";
+    private volatile String gatewayMotd = "";
     private volatile boolean busy;
     private volatile long fetchedAt;
     private int ticks;
@@ -62,6 +63,12 @@ public final class SyncedWorldsScreen extends Screen {
             groups = got;
             fetchedAt = System.currentTimeMillis();
             Group main = got.get(0);
+            try {
+                String m = Gateways.client(Gateways.main()).gatewayMotd();
+                gatewayMotd = m == null ? "" : m;
+            } catch (Exception ignored) {
+                // no banner is fine when the gateway cannot be reached; the error above already says so
+            }
             if (got.size() > 1) {
                 message = "";
             } else if (main.listing() == null) {
@@ -351,6 +358,9 @@ public final class SyncedWorldsScreen extends Screen {
     public void render(GuiGraphics g, int mx, int my, float dt) {
         super.render(g, mx, my, dt);
         g.drawCenteredString(font, title, width / 2, 14, 0xFFFFFF);
+        if (!gatewayMotd.isEmpty()) {
+            g.drawCenteredString(font, gatewayMotd, width / 2, 26, 0xFFD18F);
+        }
         if (dev.mcmesh.neoforge.SyncProgress.draw(g, font, width / 2, height - 78, 240)) {
             g.drawCenteredString(font, message, width / 2, height - 92, 0xAAAAAA);
             return;

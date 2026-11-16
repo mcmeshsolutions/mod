@@ -165,6 +165,30 @@ public final class GatewayClient {
         return JsonParser.parseString(new String(r)).getAsJsonObject();
     }
 
+    /** The gateway-wide MOTD, or null when the operator never set one. */
+    public String gatewayMotd() throws IOException, GatewayException {
+        byte[] r = exec("/v1/motd", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
+        var e = JsonParser.parseString(new String(r)).getAsJsonObject().get("motd");
+        return e == null || e.isJsonNull() ? null : e.getAsString();
+    }
+
+    /** This world's own MOTD (world_aux settings/motd), or null when the owner never set one. */
+    public String worldMotd(String world) throws IOException, GatewayException {
+        try {
+            return new String(exec("/v1/worlds/" + world + "/aux/settings/motd", "GET", HttpRequest.BodyPublishers.noBody(), "application/octet-stream"));
+        } catch (GatewayException e) {
+            if (e.code.equals("NO_SUCH_KEY")) {
+                return null;
+            }
+            throw e;
+        }
+    }
+
+    /** Owner or gateway admin only. Empty clears it. */
+    public void setWorldMotd(String world, String text) throws IOException, GatewayException {
+        exec("/v1/worlds/" + world + "/aux/settings/motd", "PUT", HttpRequest.BodyPublishers.ofString(MotdFormat.translate(text)), "application/octet-stream");
+    }
+
     public String authChallenge() throws IOException, GatewayException {
         return post("/v1/auth/challenge", new JsonObject()).get("challenge").getAsString();
     }
