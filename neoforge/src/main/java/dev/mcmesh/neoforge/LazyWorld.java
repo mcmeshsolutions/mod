@@ -48,6 +48,7 @@ final class LazyWorld {
     private final Map<String, List<RevisionFiles.Chunk>> pending;
     private final java.util.concurrent.ConcurrentLinkedDeque<String> priority = new java.util.concurrent.ConcurrentLinkedDeque<>();
     private volatile boolean closed;
+    private final long startedAt = System.currentTimeMillis();
     private int done;
     private int total;
     /** The revision the pending regions belong to, when it is not the one the world's marker names (regions taken back from a shard). */
@@ -228,6 +229,15 @@ final class LazyWorld {
         return total;
     }
 
+    /** Projected seconds left, from the average pace so far; -1 before the first region lands. */
+    long etaSeconds() {
+        if (done <= 0) {
+            return -1;
+        }
+        double msPerRegion = (System.currentTimeMillis() - startedAt) / (double) done;
+        return Math.round(msPerRegion * (total - done) / 1000.0);
+    }
+
     /** True while a lazy bootstrap still owes this region to the gateway; it overwrites whatever is on disk when it arrives. */
     static boolean owes(String dim, int rx, int rz) {
         LazyWorld w = active;
@@ -269,16 +279,19 @@ final class LazyWorld {
         }
     }
 
+    private static final int FETCH_CONCURRENCY = 16;
+
     private void materialize(String key, List<RevisionFiles.Chunk> chunks) throws IOException {
         // a partial file from a crash is ours to replace: the game has never opened a pending region
         String[] k = key.split("\\|");
         for (String kind : patch ? List.<String>of() : KINDS) {
             Files.deleteIfExists(WorldPaths.dirOf(root, k[0]).resolve(kind).resolve("r." + k[1] + "." + k[2] + ".mca"));
         }
+        byte[][] data = fetchAll(chunks);
         WorldSync.Sink sink = new WorldSync.Sink(root);
         try {
-            for (RevisionFiles.Chunk c : chunks) {
-                sink.chunk(c, fetchForever(c.hash()));
+            for (int i = 0; i < chunks.size(); i++) {
+                sink.chunk(chunks.get(i), data[i]);
             }
         } finally {
             sink.close();
@@ -286,6 +299,46 @@ final class LazyWorld {
         for (String kind : KINDS) {
             McaTimestamps.backdate(WorldPaths.dirOf(root, k[0]).resolve(kind).resolve("r." + k[1] + "." + k[2] + ".mca"), backdateSec);
         }
+    }
+
+    // one chunk's blob was one HTTP round trip at a time here, so a region with hundreds of chunks
+    // crawled at round-trip speed instead of bandwidth speed; fetch is now bounded-concurrent, writes
+    // to the .mca files stay sequential below since Sink isn't safe for concurrent use
+    private byte[][] fetchAll(List<RevisionFiles.Chunk> chunks) throws IOException {
+        int n = chunks.size();
+        byte[][] out = new byte[n][];
+        var sem = new java.util.concurrent.Semaphore(FETCH_CONCURRENCY);
+        var err = new java.util.concurrent.atomic.AtomicReference<IOException>();
+        Thread[] workers = new Thread[n];
+        for (int i = 0; i < n; i++) {
+            int idx = i;
+            workers[i] = Thread.ofVirtual().start(() -> {
+                try {
+                    sem.acquire();
+                    try {
+                        out[idx] = fetchForever(chunks.get(idx).hash());
+                    } finally {
+                        sem.release();
+                    }
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                } catch (IOException e) {
+                    err.compareAndSet(null, e);
+                }
+            });
+        }
+        for (Thread t : workers) {
+            try {
+                t.join();
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new IOException("interrupted", ie);
+            }
+        }
+        if (err.get() != null) {
+            throw err.get();
+        }
+        return out;
     }
 
     private byte[] fetchForever(byte[] hash) throws IOException {
@@ -377,8 +430,15 @@ final class LazyWorld {
         }
         LazyWorld w = new LazyWorld(gw, root, byKey, (int) (System.currentTimeMillis() / 1000) - 3600, false);
         LOG.info("lazy bootstrap: finishing {} regions left by the last session before the world loads", saved.size());
-        for (String key : saved) {
-            w.ensure(key);
+        active = w;
+        try {
+            for (String key : saved) {
+                w.ensure(key);
+            }
+        } finally {
+            if (active == w) {
+                active = null;
+            }
         }
         clearState(root);
     }

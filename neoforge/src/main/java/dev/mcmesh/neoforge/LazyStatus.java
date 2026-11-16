@@ -9,4 +9,10 @@ public final class LazyStatus {
         LazyWorld w = LazyWorld.active;
         return w == null ? null : new int[] {w.done(), w.total()};
     }
+
+    /** Projected seconds left, or -1 when there is no active bootstrap or no pace yet. */
+    public static long etaSeconds() {
+        LazyWorld w = LazyWorld.active;
+        return w == null ? -1 : w.etaSeconds();
+    }
 }

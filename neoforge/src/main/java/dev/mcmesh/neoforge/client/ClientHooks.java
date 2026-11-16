@@ -180,7 +180,8 @@ public final class ClientHooks {
             }
             int[] lazy = dev.mcmesh.neoforge.LazyStatus.progress();
             if (lazy != null && lazy[1] > 0) {
-                String t = String.format("World sync: %,d / %,d regions", lazy[0], lazy[1]);
+                long eta = dev.mcmesh.neoforge.LazyStatus.etaSeconds();
+                String t = String.format("World sync: %,d / %,d regions%s", lazy[0], lazy[1], eta < 0 ? "" : " (~" + etaText(eta) + " left)");
                 g.drawString(f, t, w - f.width(t) - 6, 30, 0xFFAAAAAA, true);
                 int bw = 150;
                 int x0 = w - bw - 6;
@@ -199,6 +200,22 @@ public final class ClientHooks {
             }
         } catch (RuntimeException ex) {
             // a status line must never take the frame down with it
+        }
+    }
+
+    private static String etaText(long s) {
+        return s < 60 ? s + "s" : (s / 60) + "m " + (s % 60) + "s";
+    }
+
+    // the world-loading screen shown while completeFromState() runs is not in-game, so RenderGuiEvent.Post
+    // never fires for it; this covers that gap instead of leaving the catch-up silent on screen
+    @SubscribeEvent
+    public static void preGame(ScreenEvent.Render.Post e) {
+        if (Minecraft.getInstance().level != null || e.getScreen() instanceof net.minecraft.client.gui.screens.PauseScreen) {
+            return;
+        }
+        if (dev.mcmesh.neoforge.LazyStatus.progress() != null) {
+            drawStatusInfo(e.getGuiGraphics());
         }
     }
 
