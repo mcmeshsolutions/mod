@@ -4,7 +4,7 @@ license = "MIT"
 
 [[mods]]
 modId = "mcmesh"
-version = "0.2.0-test.15"
+version = "0.2.0-test.16"
 displayName = "MC Mesh"
 description = "Joins a mesh gateway and hosts the world when this machine is the strongest peer."
 
