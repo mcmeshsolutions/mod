@@ -120,8 +120,9 @@ class GatewayIT {
         assertEquals(32, lease.hmacKey().length);
         gw.heartbeat(lease.id(), lease.epoch());
 
-        try (ServerSocket mc = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
-                DatagramSocket voice = new DatagramSocket(0, InetAddress.getLoopbackAddress())) {
+        InetAddress loopback = InetAddress.getByAddress(new byte[] {127, 0, 0, 1});
+        try (ServerSocket mc = new ServerSocket(0, 50, loopback);
+                DatagramSocket voice = new DatagramSocket(0, loopback)) {
             upperCaseServer(mc);
             Thread.ofVirtual().start(() -> {
                 byte[] b = new byte[2048];
