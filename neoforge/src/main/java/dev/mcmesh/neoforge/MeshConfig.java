@@ -81,8 +81,11 @@ public final class MeshConfig {
         LAZY_MIN_CHUNKS = b.comment("lazy bootstrap only applies to worlds with at least this many stored chunk entries (region, entities and poi count separately)").defineInRange("lazyMinChunks", 20000, 1, Integer.MAX_VALUE);
         LAZY_RADIUS_REGIONS = b.comment("regions (512 blocks) around spawn and each player that are downloaded before the world opens").defineInRange("lazyRadiusRegions", 2, 0, 16);
         LAZY_SMALL_DIM_CHUNKS = b.comment("a dimension with no spawn or player in it and at most this many entries is downloaded whole before the world opens").defineInRange("lazySmallDimChunks", 4096, 0, Integer.MAX_VALUE);
-        SYNC_THREADS = b.comment("parallel connections used to download world files from the gateway; each one is its own TCP connection, so a flaky network or a busy gateway may need this lower than the default")
-                .defineInRange("syncThreads", 2, 1, 16);
+        SYNC_THREADS = b.comment("parallel world-file fetches in flight at once. Over the blob-stream path (the default when the gateway "
+                + "offers one) these are pipelined requests on a single already-open connection, bounded server-side by blobstream's own "
+                + "MAX_INFLIGHT (8); only the HTTP fallback opens one raw TCP connection per fetch, where a flaky network or busy gateway "
+                + "may need this lower")
+                .defineInRange("syncThreads", 8, 1, 16);
         SHOW_HOST_HEALTH = b.comment("show a small line in the corner of the screen about how well the host machine is doing").define("showHostHealth", true);
         HUD_ALWAYS_VISIBLE = b.comment("the host/guest status line, lazy bootstrap and worldgen progress, and the F9 debug map draw during normal play; "
                 + "set to false to see them only while the pause menu (Esc) is open, since they can be distracting otherwise").define("hudAlwaysVisible", true);
