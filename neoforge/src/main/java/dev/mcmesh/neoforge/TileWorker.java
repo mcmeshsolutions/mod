@@ -201,11 +201,42 @@ final class TileWorker {
         LOG.warn("the chunks did not finish unloading in two minutes, saving what there is");
     }
 
+    /** Pipelines every tile blob over the persistent blob-stream connection at once, same reasoning as
+     *  ChunkUploader.putBlobs: one already-open connection with no concurrency cap of its own saturates
+     *  the link instead of being bound by a thread-count guess. Anything with no stream to use, or whose
+     *  pipelined upload failed, falls back to UPLOADERS raw HTTP PUTs. */
     private static void upload(GatewayClient gw, List<byte[]> blobs) throws Exception {
+        List<byte[]> fallback = new ArrayList<>();
+        List<byte[]> pipelined = new ArrayList<>();
+        List<java.util.concurrent.CompletableFuture<byte[]>> futures = new ArrayList<>();
+        for (byte[] b : blobs) {
+            var f = gw.blobPutAsync(b);
+            if (f == null) {
+                fallback.add(b);
+            } else {
+                pipelined.add(b);
+                futures.add(f);
+            }
+        }
+        for (int i = 0; i < pipelined.size(); i++) {
+            try {
+                futures.get(i).get(30, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException e) {
+                fallback.add(pipelined.get(i));
+            } catch (java.util.concurrent.ExecutionException e) {
+                if (e.getCause() instanceof dev.mcmesh.core.GatewayException g) {
+                    throw g;
+                }
+                fallback.add(pipelined.get(i));
+            }
+        }
+        if (fallback.isEmpty()) {
+            return;
+        }
         ExecutorService pool = Executors.newFixedThreadPool(UPLOADERS);
         try {
             List<Future<?>> done = new ArrayList<>();
-            for (byte[] b : blobs) {
+            for (byte[] b : fallback) {
                 done.add(pool.submit(() -> {
                     gw.blobPut(b);
                     return null;

@@ -27,12 +27,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class BlobStream implements AutoCloseable {
     public static final byte HELLO = 1, HELLO_OK = 2, ERR = 3, WANT = 4, BLOB_BEGIN = 5, BLOB_DATA = 6, MISSING = 7, PING = 8, PONG = 9;
+    public static final byte PUT_BEGIN = 10, PUT_DATA = 11, PUT_OK = 12, PUT_ERR = 13;
     private static final byte[] STOP = new byte[0];
 
     private final Socket sock;
     private final OutputStream out;
     private final BlockingQueue<byte[]> outbox = new LinkedBlockingQueue<>();
     private final Map<Integer, Inflight> inflight = new ConcurrentHashMap<>();
+    private final Map<Integer, CompletableFuture<byte[]>> puts = new ConcurrentHashMap<>();
     private final AtomicInteger nextId = new AtomicInteger(1);
     private final Thread reader;
     private final Thread writer;
@@ -124,6 +126,61 @@ public final class BlobStream implements AutoCloseable {
         }
     }
 
+    /** Queues an upload and returns immediately with a future for the hash the gateway stored it under,
+     *  with no cap on how many may be outstanding at once - the mirror image of fetchAsync, for a caller
+     *  (ChunkUploader) uploading many small blobs that would otherwise pay one HTTP request's overhead
+     *  each. The gateway computes the hash itself; the caller should still compare it against its own, as
+     *  fetch()/put() do, since nothing here stops a corrupted frame from arriving looking well-formed. */
+    public CompletableFuture<byte[]> putAsync(byte[] data) {
+        if (closed) {
+            return CompletableFuture.failedFuture(new IOException("blobstream closed"));
+        }
+        int id = nextId.getAndIncrement();
+        CompletableFuture<byte[]> f = new CompletableFuture<>();
+        puts.put(id, f);
+        try {
+            outbox.add(Tunnel.frame(PUT_BEGIN, id, longBytes(data.length), 0, 8));
+            for (int off = 0; off < data.length; off += Tunnel.MAX_PAYLOAD) {
+                int len = Math.min(Tunnel.MAX_PAYLOAD, data.length - off);
+                outbox.add(Tunnel.frame(PUT_DATA, id, data, off, len));
+            }
+        } catch (IOException e) {
+            puts.remove(id);
+            return CompletableFuture.failedFuture(e);
+        }
+        return f.whenComplete((d, err) -> puts.remove(id));
+    }
+
+    private static byte[] longBytes(long v) {
+        return ByteBuffer.allocate(8).putLong(v).array();
+    }
+
+    /** Uploads one blob over the persistent stream and verifies the hash the gateway reports storing it under. */
+    public byte[] put(byte[] data) throws IOException, GatewayException {
+        byte[] want = Bytes.sha256(data);
+        try {
+            byte[] hash = putAsync(data).get(30, TimeUnit.SECONDS);
+            if (!Arrays.equals(hash, want)) {
+                throw new IOException("upload stored under an unexpected hash");
+            }
+            return hash;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("interrupted", e);
+        } catch (TimeoutException e) {
+            close();
+            throw new IOException("blobstream timed out uploading " + Bytes.hex(want), e);
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof GatewayException g) {
+                throw g;
+            }
+            if (e.getCause() instanceof IOException io) {
+                throw io;
+            }
+            throw new IOException(e.getCause());
+        }
+    }
+
     private void writeLoop() {
         try {
             while (!closed) {
@@ -176,6 +233,18 @@ public final class BlobStream implements AutoCloseable {
                             inf.done.completeExceptionally(new GatewayException(400, "NO_SUCH_BLOB"));
                         }
                     }
+                    case PUT_OK -> {
+                        CompletableFuture<byte[]> p = puts.get(f.id());
+                        if (p != null && f.data().length == 32) {
+                            p.complete(f.data());
+                        }
+                    }
+                    case PUT_ERR -> {
+                        CompletableFuture<byte[]> p = puts.get(f.id());
+                        if (p != null) {
+                            p.completeExceptionally(new GatewayException(400, new String(f.data(), StandardCharsets.UTF_8)));
+                        }
+                    }
                     case PONG -> { }
                     default -> { }
                 }
@@ -191,6 +260,10 @@ public final class BlobStream implements AutoCloseable {
             inf.done.completeExceptionally(e);
         }
         inflight.clear();
+        for (CompletableFuture<byte[]> p : puts.values()) {
+            p.completeExceptionally(e);
+        }
+        puts.clear();
         try {
             sock.close();
         } catch (IOException ignored) { }

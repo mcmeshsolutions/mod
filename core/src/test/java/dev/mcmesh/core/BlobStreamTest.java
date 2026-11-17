@@ -83,4 +83,42 @@ class BlobStreamTest {
             }
         }
     }
+
+    @Test
+    void putsAnUploadAndVerifiesTheHashTheServerReports() throws Exception {
+        byte[] data = "uploaded chunk bytes".getBytes(StandardCharsets.UTF_8);
+        byte[] hash = Bytes.sha256(data);
+
+        try (ServerSocket server = new ServerSocket(0)) {
+            Thread peer = new Thread(() -> {
+                try (Socket s = server.accept()) {
+                    DataInputStream in = new DataInputStream(new BufferedInputStream(s.getInputStream()));
+                    OutputStream out = s.getOutputStream();
+                    Tunnel.read(in);
+                    Tunnel.write(out, BlobStream.HELLO_OK, 0, new byte[0], 0, 0);
+
+                    Tunnel.Frame begin = Tunnel.read(in);
+                    assertEquals(BlobStream.PUT_BEGIN, begin.type());
+                    long total = ByteBuffer.wrap(begin.data()).getLong();
+                    byte[] got = new byte[(int) total];
+                    int off = 0;
+                    while (off < total) {
+                        Tunnel.Frame d = Tunnel.read(in);
+                        assertEquals(BlobStream.PUT_DATA, d.type());
+                        assertEquals(begin.id(), d.id());
+                        System.arraycopy(d.data(), 0, got, off, d.data().length);
+                        off += d.data().length;
+                    }
+                    assertArrayEquals(data, got);
+                    Tunnel.write(out, BlobStream.PUT_OK, begin.id(), hash, 0, hash.length);
+                } catch (Exception ignored) { }
+            });
+            peer.setDaemon(true);
+            peer.start();
+
+            try (BlobStream bs = BlobStream.connect(new InetSocketAddress("127.0.0.1", server.getLocalPort()), "tok-123")) {
+                assertArrayEquals(hash, bs.put(data));
+            }
+        }
+    }
 }

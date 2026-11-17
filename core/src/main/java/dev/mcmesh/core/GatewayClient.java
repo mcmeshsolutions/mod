@@ -597,11 +597,50 @@ public final class GatewayClient {
         return post(leasePath(lease) + "/wal", body).get("next_seq").getAsLong();
     }
 
-    /** Uploads raw bytes under their SHA-256; returns the hash. */
+    /** Uploads raw bytes under their SHA-256; returns the hash. Tries the persistent stream first, same
+     *  as blobGet, falling back to one HTTP PUT if no stream is available or it just failed. */
     public byte[] blobPut(byte[] raw) throws IOException, GatewayException {
+        BlobStream s = acquireBlobStream();
+        if (s != null) {
+            try {
+                return s.put(raw);
+            } catch (GatewayException g) {
+                throw g;
+            } catch (IOException e) {
+                synchronized (this) {
+                    if (blobStream == s) {
+                        blobStream.close();
+                        blobStream = null;
+                    }
+                }
+            }
+        }
         byte[] h = Bytes.sha256(raw);
         exec("/v1/blobs/" + Bytes.hex(h), "PUT", HttpRequest.BodyPublishers.ofByteArray(raw), "application/octet-stream");
         return h;
+    }
+
+    /** Non-blocking attempt to upload a blob over the persistent stream, for a caller (ChunkUploader) that
+     *  wants to pipeline many uploads at once instead of bounding concurrency to a thread-count guess.
+     *  Returns null when no stream is available right now, so the caller should fall back to
+     *  {@link #blobPut} for that item instead. */
+    public java.util.concurrent.CompletableFuture<byte[]> blobPutAsync(byte[] raw) {
+        BlobStream s = acquireBlobStream();
+        if (s == null) {
+            return null;
+        }
+        java.util.concurrent.CompletableFuture<byte[]> f = s.putAsync(raw);
+        f.whenComplete((hash, err) -> {
+            if (err != null && !(err instanceof GatewayException)) {
+                synchronized (this) {
+                    if (blobStream == s) {
+                        blobStream.close();
+                        blobStream = null;
+                    }
+                }
+            }
+        });
+        return f;
     }
 
     /**

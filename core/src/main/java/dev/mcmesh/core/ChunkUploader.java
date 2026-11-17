@@ -2,6 +2,7 @@ package dev.mcmesh.core;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -120,18 +121,62 @@ public final class ChunkUploader {
         return out;
     }
 
-    /** Blob uploads are independent of each other, so overlap them: sequential PUTs are bound by round-trip time, not bandwidth. */
+    /** Blob uploads are independent of each other, so overlap them. Issues every upload at once over the
+     *  persistent blob-stream connection, if there is one - pipelined on one already-open connection
+     *  instead of bound by a thread-count guess the way the HTTP fallback below has to be, matching
+     *  WorldDownloader's reasoning on the way down. Anything with no stream to use, or whose pipelined
+     *  upload failed, falls back to PARALLEL raw HTTP PUTs. */
     private List<byte[]> putBlobs(List<Map.Entry<Key, byte[]>> items) throws IOException, GatewayException {
+        byte[][] out = new byte[items.size()][];
+        List<Integer> fallback = new ArrayList<>();
+        List<Integer> pipelined = new ArrayList<>();
+        List<java.util.concurrent.CompletableFuture<byte[]>> futures = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            byte[] data = items.get(i).getValue();
+            if (data == null) {
+                continue;
+            }
+            var f = gw.blobPutAsync(data);
+            if (f == null) {
+                fallback.add(i);
+            } else {
+                pipelined.add(i);
+                futures.add(f);
+            }
+        }
+        for (int j = 0; j < pipelined.size(); j++) {
+            int i = pipelined.get(j);
+            try {
+                byte[] hash = futures.get(j).get(30, java.util.concurrent.TimeUnit.SECONDS);
+                if (!Arrays.equals(hash, Bytes.sha256(items.get(i).getValue()))) {
+                    throw new IOException("upload stored under an unexpected hash");
+                }
+                out[i] = hash;
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new IOException("interrupted", ie);
+            } catch (java.util.concurrent.TimeoutException te) {
+                fallback.add(i);
+            } catch (java.util.concurrent.ExecutionException ee) {
+                if (ee.getCause() instanceof GatewayException g) {
+                    throw g;
+                }
+                fallback.add(i);
+            }
+        }
+        if (!fallback.isEmpty()) {
+            putBlobsFallback(items, fallback, out);
+        }
+        return Arrays.asList(out);
+    }
+
+    private void putBlobsFallback(List<Map.Entry<Key, byte[]>> items, List<Integer> indices, byte[][] out) throws IOException, GatewayException {
         java.util.concurrent.Semaphore gate = new java.util.concurrent.Semaphore(PARALLEL);
-        List<java.util.concurrent.Future<byte[]>> fs = new ArrayList<>(items.size());
+        List<java.util.concurrent.Future<byte[]>> fs = new ArrayList<>(indices.size());
         java.util.concurrent.ExecutorService ex = Threads.perTaskExecutor();
         try {
-            for (Map.Entry<Key, byte[]> e : items) {
-                byte[] data = e.getValue();
-                if (data == null) {
-                    fs.add(java.util.concurrent.CompletableFuture.completedFuture(null));
-                    continue;
-                }
+            for (int i : indices) {
+                byte[] data = items.get(i).getValue();
                 gate.acquireUninterruptibly();
                 fs.add(ex.submit(() -> {
                     try {
@@ -144,10 +189,10 @@ public final class ChunkUploader {
         } finally {
             ex.shutdown();
         }
-        List<byte[]> out = new ArrayList<>(fs.size());
+        int k = 0;
         for (var f : fs) {
             try {
-                out.add(f.get());
+                out[indices.get(k++)] = f.get();
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 throw new IOException("interrupted", ie);
@@ -162,7 +207,6 @@ public final class ChunkUploader {
                 throw new IOException(c);
             }
         }
-        return out;
     }
 
     private void appendBatch(List<Map.Entry<Key, byte[]>> items, boolean barrier) throws IOException, GatewayException {
