@@ -27,13 +27,21 @@ public final class Tunnel {
         return new Frame(type, id, data);
     }
 
-    public static void write(OutputStream out, byte type, int id, byte[] data, int off, int len) throws IOException {
+    /** Builds one wire frame without writing it anywhere - lets a caller queue it for a single writer
+     *  thread instead of writing straight to the socket itself (see TunnelAgent, where many virtual
+     *  threads used to share one `synchronized` write and could pin their carrier thread on a slow or
+     *  stuck socket). */
+    public static byte[] frame(byte type, int id, byte[] data, int off, int len) throws IOException {
         if (len > MAX_PAYLOAD) {
             throw new IOException("frame too large: " + len);
         }
         ByteBuffer b = ByteBuffer.allocate(9 + len);
         b.put(type).putInt(id).putInt(len).put(data, off, len);
-        out.write(b.array());
+        return b.array();
+    }
+
+    public static void write(OutputStream out, byte type, int id, byte[] data, int off, int len) throws IOException {
+        out.write(frame(type, id, data, off, len));
         out.flush();
     }
 }

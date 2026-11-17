@@ -15,12 +15,14 @@ import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * Host side of the reverse tunnel. Dials the gateway, then serves guest TCP streams by connecting to the
  * local server and guest voice packets by relaying to the local voice port. Pure JDK, one virtual thread per stream.
  */
 public final class TunnelAgent implements AutoCloseable {
+    private static final System.Logger LOG = System.getLogger("mcmesh");
     private static final byte[] EOF = new byte[0];
 
     private final InetSocketAddress gateway;
@@ -29,7 +31,12 @@ public final class TunnelAgent implements AutoCloseable {
     private final Map<Integer, Stream> streams = new ConcurrentHashMap<>();
     private volatile java.util.List<InetSocketAddress> channels = java.util.List.of();
     private final Map<Integer, DatagramSocket> peers = new ConcurrentHashMap<>();
-    private final Object writeLock = new Object();
+    /** One writer thread drains this instead of every stream's thread writing straight to the socket
+     *  under a shared lock - a `synchronized` write that blocks on a slow or stuck socket pins its
+     *  virtual thread to its carrier, and enough of those piling up can starve the carrier pool the
+     *  main read loop also needs, silently stalling every new guest stream with nothing to log. */
+    private final BlockingQueue<byte[]> outbox = new LinkedBlockingQueue<>();
+    private volatile Thread writerThread;
     private volatile Socket sock;
     private volatile OutputStream out;
     private volatile boolean closed;
@@ -75,6 +82,21 @@ public final class TunnelAgent implements AutoCloseable {
         }
         // the gateway pings every 10 s, so silence for 40 s means the path is dead
         s.setSoTimeout(40_000);
+        writerThread = Threads.start("mesh-tunnel-writer", this::writeLoop);
+    }
+
+    private void writeLoop() {
+        try {
+            while (!closed) {
+                byte[] b = outbox.take();
+                out.write(b);
+                out.flush();
+            }
+        } catch (IOException e) {
+            close();
+        } catch (InterruptedException ignored) {
+            // closing
+        }
     }
 
     static String proof(String token, String lease, long epoch, long ts) throws IOException {
@@ -139,19 +161,20 @@ public final class TunnelAgent implements AutoCloseable {
         }
     }
 
-    private void send(byte type, int id, byte[] d, int len) throws IOException {
-        synchronized (writeLock) {
-            Tunnel.write(out, type, id, d, 0, len);
+    /** Queues a frame for the single writer thread; never blocks on the socket itself. */
+    private void send(byte type, int id, byte[] d, int len) {
+        try {
+            outbox.add(Tunnel.frame(type, id, d, 0, len));
+        } catch (IOException e) {
+            LOG.log(System.Logger.Level.WARNING, "dropped oversized frame type={0} id={1}: {2}", type, id, e.toString());
         }
     }
 
     private void open(int id, int chan) {
         var cs = channels;
         if (chan > cs.size()) {
-            try {
-                send(Tunnel.CLOSE, id, new byte[0], 0);
-            } catch (IOException ignored) {
-            }
+            LOG.log(System.Logger.Level.WARNING, "stream {0} requested unknown channel {1} (only {2} configured)", id, chan, cs.size());
+            send(Tunnel.CLOSE, id, new byte[0], 0);
             return;
         }
         InetSocketAddress target = chan == 0 ? server : cs.get(chan - 1);
@@ -161,9 +184,11 @@ public final class TunnelAgent implements AutoCloseable {
     }
 
     private void pump(int id, Stream st, InetSocketAddress target) {
+        boolean connected = false;
         try {
             st.sock().setTcpNoDelay(true);
             st.sock().connect(target, 5000);
+            connected = true;
             Threads.start("mesh-stream-w-" + id, () -> {
                 try {
                     OutputStream o = st.sock().getOutputStream();
@@ -187,7 +212,14 @@ public final class TunnelAgent implements AutoCloseable {
                 send(Tunnel.DATA, id, buf, n);
             }
         } catch (IOException e) {
-            // local server went away or tunnel write failed; either way this stream is over
+            // local server went away or tunnel write failed; distinguish the two since a guest never
+            // reaching the local server at all (connect itself failing) looks identical to the guest
+            // from the relay's side as any other dropped connection, with nothing in either log otherwise
+            if (!connected) {
+                LOG.log(System.Logger.Level.WARNING, "stream {0} could not connect to {1}: {2}", id, target, e);
+            } else {
+                LOG.log(System.Logger.Level.DEBUG, "stream {0} to {1} ended: {2}", id, target, e.toString());
+            }
         } finally {
             closeQuietly(st.sock());
             endStream(id, true);
@@ -202,11 +234,7 @@ public final class TunnelAgent implements AutoCloseable {
         st.inbox().offer(EOF);
         closeQuietly(st.sock());
         if (notify && !closed) {
-            try {
-                send(Tunnel.CLOSE, id, new byte[0], 0);
-            } catch (IOException e) {
-                // tunnel is dying, run() will clean up
-            }
+            send(Tunnel.CLOSE, id, new byte[0], 0);
         }
     }
 
@@ -244,6 +272,10 @@ public final class TunnelAgent implements AutoCloseable {
     @Override
     public void close() {
         closed = true;
+        Thread w = writerThread;
+        if (w != null) {
+            w.interrupt();
+        }
         Socket s = sock;
         if (s != null) {
             closeQuietly(s);
