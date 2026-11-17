@@ -4,10 +4,13 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 
 /** Pulls every blob of a revision and verifies its hash before handing it to the sink. */
@@ -78,13 +81,15 @@ public final class WorldDownloader {
         void update(long doneFiles, long totalFiles, long doneBytes);
     }
 
-    /** How many chunk/aux fetches run at once; each one is its own TCP connection since the gateway client
-     *  is pinned to HTTP/1.1 (no multiplexing). Mutable, same pattern as GatewayClient.syncProgress and
-     *  friends below, so the mod's config (syncThreads) can tune it without this module depending on
-     *  NeoForge's config system. Defaulted down from an earlier 8 after intermittent "HTTP connect timed
-     *  out" failures during a full resync (2026-11-17) - lower concurrency avoids straining the connection
-     *  limit on some networks, at the cost of a slower sync on networks that were never the problem. */
-    public static volatile java.util.function.IntSupplier threads = () -> 2;
+    /** How many fetches run at once over the HTTP fallback - each one is its own TCP connection there, so
+     *  a flaky network or a busy gateway may need this lower. Only applies when no persistent blob-stream
+     *  connection is available (or a specific blob's pipelined fetch failed and is being retried): the
+     *  normal path pipelines every fetch of a sync over the one blob-stream connection at once with no
+     *  concurrency cap of its own, so it saturates whatever the link can actually do instead of being
+     *  bounded by a guess tuned for one particular network. Mutable, same pattern as
+     *  GatewayClient.syncProgress and friends below, so the mod's config (syncThreads) can tune it
+     *  without this module depending on NeoForge's config system. */
+    public static volatile java.util.function.IntSupplier threads = () -> 4;
 
     private WorldDownloader() { }
 
@@ -102,28 +107,81 @@ public final class WorldDownloader {
         return fetchAll(gw, chunks, aux, sink, progress);
     }
 
+    /** One fetch to apply once its bytes arrive, independent of whether it came from a chunk or an aux file. */
+    private record Item(byte[] hash, SinkApply apply) { }
+
+    private interface SinkApply {
+        void accept(byte[] data) throws IOException;
+    }
+
     private static int fetchAll(GatewayClient gw, List<RevisionFiles.Chunk> chunks, List<RevisionFiles.Aux> aux, Sink sink, Progress progress) throws IOException, GatewayException {
+        long total = chunks.size() + aux.size();
+        AtomicLong done = new AtomicLong();
+        AtomicLong bytes = new AtomicLong();
+        if (progress != null) {
+            progress.update(0, total, 0);
+        }
+        List<Item> items = new ArrayList<>((int) total);
+        for (RevisionFiles.Chunk c : chunks) {
+            items.add(new Item(c.hash(), d -> sink.chunk(c, d)));
+        }
+        for (RevisionFiles.Aux a : aux) {
+            items.add(new Item(a.hash(), d -> sink.aux(a, d)));
+        }
+
+        // Issue every WANT at once over the persistent stream, if there is one: pipelined requests on one
+        // already-open connection are regulated by the gateway's own concurrency limit and by TCP itself,
+        // so this stays saturated on any link instead of being capped by a thread-count guess tuned for
+        // one particular network. Anything with no stream to use, or whose pipelined fetch failed, falls
+        // back to the thread-pool-bounded per-file HTTP path below.
+        List<Item> fallback = new ArrayList<>();
+        List<Item> pipelined = new ArrayList<>(items.size());
+        List<CompletableFuture<byte[]>> futures = new ArrayList<>(items.size());
+        for (Item it : items) {
+            CompletableFuture<byte[]> f = gw.blobGetAsync(it.hash());
+            if (f == null) {
+                fallback.add(it);
+            } else {
+                pipelined.add(it);
+                futures.add(f);
+            }
+        }
+        for (int i = 0; i < pipelined.size(); i++) {
+            Item it = pipelined.get(i);
+            try {
+                byte[] d = futures.get(i).get(30, TimeUnit.SECONDS);
+                if (!Arrays.equals(Bytes.sha256(d), it.hash())) {
+                    throw new IOException("blob " + Bytes.hex(it.hash()) + " failed hash check");
+                }
+                it.apply().accept(d);
+                tick(progress, done, bytes, total, d.length);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("interrupted", e);
+            } catch (TimeoutException e) {
+                fallback.add(it);
+            } catch (ExecutionException e) {
+                if (e.getCause() instanceof GatewayException g) {
+                    throw g;
+                }
+                fallback.add(it);
+            }
+        }
+
+        if (!fallback.isEmpty()) {
+            fetchFallback(gw, fallback, progress, done, bytes, total);
+        }
+        return items.size();
+    }
+
+    private static void fetchFallback(GatewayClient gw, List<Item> items, Progress progress, AtomicLong done, AtomicLong bytes, long total) throws IOException, GatewayException {
         ExecutorService pool = Executors.newFixedThreadPool(Math.max(1, threads.getAsInt()));
         try {
-            List<Future<?>> jobs = new ArrayList<>();
-            long total = chunks.size() + aux.size();
-            AtomicLong done = new AtomicLong();
-            AtomicLong bytes = new AtomicLong();
-            if (progress != null) {
-                progress.update(0, total, 0);
-            }
-            for (RevisionFiles.Chunk c : chunks) {
+            List<Future<?>> jobs = new ArrayList<>(items.size());
+            for (Item it : items) {
                 jobs.add(pool.submit(() -> {
-                    byte[] d = fetch(gw, c.hash());
-                    sink.chunk(c, d);
-                    tick(progress, done, bytes, total, d.length);
-                    return null;
-                }));
-            }
-            for (RevisionFiles.Aux a : aux) {
-                jobs.add(pool.submit(() -> {
-                    byte[] d = fetch(gw, a.hash());
-                    sink.aux(a, d);
+                    byte[] d = fetch(gw, it.hash());
+                    it.apply().accept(d);
                     tick(progress, done, bytes, total, d.length);
                     return null;
                 }));
@@ -144,7 +202,6 @@ public final class WorldDownloader {
                     throw new IOException(e.getCause());
                 }
             }
-            return jobs.size();
         } finally {
             pool.shutdownNow();
         }

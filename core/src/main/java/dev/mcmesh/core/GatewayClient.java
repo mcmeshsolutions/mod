@@ -717,6 +717,29 @@ public final class GatewayClient {
         return exec("/v1/blobs/" + Bytes.hex(hash), "GET", HttpRequest.BodyPublishers.noBody(), "application/octet-stream");
     }
 
+    /** Non-blocking attempt to fetch a blob over the persistent stream, for a caller (WorldDownloader)
+     *  that wants to pipeline many requests at once instead of bounding concurrency to a thread-count
+     *  guess. Returns null when no stream is available right now, so the caller should fall back to
+     *  {@link #blobGet} (which already does its own per-file HTTP fallback) for that item instead. */
+    public java.util.concurrent.CompletableFuture<byte[]> blobGetAsync(byte[] hash) {
+        BlobStream s = acquireBlobStream();
+        if (s == null) {
+            return null;
+        }
+        java.util.concurrent.CompletableFuture<byte[]> f = s.fetchAsync(hash);
+        f.whenComplete((data, err) -> {
+            if (err != null && !(err instanceof GatewayException)) {
+                synchronized (this) {
+                    if (blobStream == s) {
+                        blobStream.close();
+                        blobStream = null;
+                    }
+                }
+            }
+        });
+        return f;
+    }
+
     /** What a worker is told to do with a tile. {@code role} is "generate" or "verify". */
     public record WorldgenClaim(long tile, String world, String dim, int x, int z, int size, int halo, int genVersion, String seed, String profile, String role) { }
 

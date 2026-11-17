@@ -75,17 +75,34 @@ public final class BlobStream implements AutoCloseable {
         return !closed && !sock.isClosed();
     }
 
-    /** Requests one blob over the persistent stream and verifies its SHA-256 hash. */
-    public byte[] fetch(byte[] hash) throws IOException, GatewayException {
+    /** Queues a WANT frame and returns immediately, without verifying the hash or capping how many
+     *  requests may be outstanding at once. A caller fetching many blobs (a full world sync) should issue
+     *  them all up front instead of trickling them through a fixed-size thread pool one at a time - this
+     *  keeps the single connection saturated by its own flow control (bounded server-side, see
+     *  blobstream.rs's MAX_INFLIGHT) and by TCP itself, instead of being capped by a concurrency guess
+     *  that has to be re-tuned for whatever the network's bandwidth-delay product happens to be. */
+    public CompletableFuture<byte[]> fetchAsync(byte[] hash) {
         if (closed) {
-            throw new IOException("blobstream closed");
+            return CompletableFuture.failedFuture(new IOException("blobstream closed"));
         }
         int id = nextId.getAndIncrement();
         Inflight inf = new Inflight();
         inflight.put(id, inf);
+        byte[] frame;
         try {
-            outbox.add(Tunnel.frame(WANT, id, hash, 0, hash.length));
-            byte[] data = inf.done.get(30, TimeUnit.SECONDS);
+            frame = Tunnel.frame(WANT, id, hash, 0, hash.length);
+        } catch (IOException e) {
+            inflight.remove(id);
+            return CompletableFuture.failedFuture(e);
+        }
+        outbox.add(frame);
+        return inf.done.whenComplete((d, err) -> inflight.remove(id));
+    }
+
+    /** Requests one blob over the persistent stream and verifies its SHA-256 hash. */
+    public byte[] fetch(byte[] hash) throws IOException, GatewayException {
+        try {
+            byte[] data = fetchAsync(hash).get(30, TimeUnit.SECONDS);
             if (!Arrays.equals(Bytes.sha256(data), hash)) {
                 throw new IOException("blob " + Bytes.hex(hash) + " failed hash check");
             }
@@ -104,8 +121,6 @@ public final class BlobStream implements AutoCloseable {
                 throw io;
             }
             throw new IOException(e.getCause());
-        } finally {
-            inflight.remove(id);
         }
     }
 
