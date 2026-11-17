@@ -24,8 +24,10 @@ import java.security.spec.X509EncodedKeySpec;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -185,6 +187,32 @@ public final class PackUpdater {
                 throw e;
             }
             put.add(f.path());
+        }
+
+        // A mods/ folder can end up with more than one mcmesh-<version>.jar - a manual install, or a
+        // "remove" entry that got missed between two releases - and NeoForge's loader treats two jars
+        // declaring the same modId as a hard "duplicate mod" crash rather than quietly picking one. So on
+        // top of whatever the manifest's own remove list says, always sweep mods/ for every other
+        // mcmesh-*.jar (and the bare mcmesh.jar some older installs used) that is not one of this
+        // update's own files, and remove it too.
+        Path modsDir = s.gameDir().resolve("mods");
+        if (Files.isDirectory(modsDir)) {
+            Set<String> keep = new HashSet<>(put);
+            for (Entry f : files) {
+                keep.add(f.path());
+            }
+            try (var listing = Files.list(modsDir)) {
+                for (Path p : (Iterable<Path>) listing::iterator) {
+                    String name = p.getFileName().toString();
+                    if (!Files.isRegularFile(p) || !(name.equals("mcmesh.jar") || name.matches("mcmesh-[0-9].*\\.jar"))) {
+                        continue;
+                    }
+                    String rel = "mods/" + name;
+                    if (!keep.contains(rel) && !remove.contains(rel)) {
+                        remove.add(rel);
+                    }
+                }
+            }
         }
 
         List<String> lines = new ArrayList<>();

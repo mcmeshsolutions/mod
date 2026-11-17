@@ -151,6 +151,20 @@ class PackUpdaterTest {
     }
 
     @Test
+    void staleMcmeshJarsAreSweptEvenWhenNotInTheRemoveList() throws Exception {
+        Files.writeString(game.resolve("mods/mcmesh-0.1.0.jar"), "stale");
+        Files.writeString(game.resolve("mods/mcmesh.jar"), "also stale");
+        Files.writeString(game.resolve("mods/unrelated.jar"), "keep me");
+        publish(manifest("mypack", "1.1", file("mods/mcmesh-0.2.0.jar", JAR, "files/foo.jar")), JAR);
+        updater().run(settings(pub, true));
+        PackSwap.apply(game);
+        assertEquals("new jar bytes", Files.readString(game.resolve("mods/mcmesh-0.2.0.jar")));
+        assertFalse(Files.exists(game.resolve("mods/mcmesh-0.1.0.jar")));
+        assertFalse(Files.exists(game.resolve("mods/mcmesh.jar")));
+        assertEquals("keep me", Files.readString(game.resolve("mods/unrelated.jar")));
+    }
+
+    @Test
     void badSignatureIsRejected() throws Exception {
         publish(manifest("mypack", "1.1", file("mods/foo-2.jar", JAR, "files/foo.jar")), JAR);
         KeyPair other = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();

@@ -25,7 +25,7 @@ public final class PackPreLaunch {
     static final String DEFAULT_UPDATE_URL = "https://play.23012006.xyz/dl/pack-manifest.json";
 
     /** Bump this (and have PackBuilder's updaterVersion match) whenever mcmesh-updater.jar itself changes. */
-    static final int SELF_VERSION = 3;
+    static final int SELF_VERSION = 4;
 
     private PackPreLaunch() { }
 
