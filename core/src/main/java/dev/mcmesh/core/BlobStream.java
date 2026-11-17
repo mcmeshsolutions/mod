@@ -38,7 +38,16 @@ public final class BlobStream implements AutoCloseable {
     private final AtomicInteger nextId = new AtomicInteger(1);
     private final Thread reader;
     private final Thread writer;
+    private final Thread pinger;
     private volatile boolean closed;
+    /** Well under the server's IDLE_DEADLINE (120s, see blobstream.rs): a large pipelined batch sends its
+     *  whole burst of WANT/PUT_BEGIN frames up front and then nothing else client-side until requests
+     *  start completing, which can easily take the gateway over two minutes to work through on a big
+     *  sync - the connection is actually fine and still actively producing data the whole time, but the
+     *  server only measures frames arriving FROM the client, so without this it kills a perfectly healthy
+     *  transfer out from under a batch that is still in progress. Confirmed live: a multi-GB sync dropped
+     *  mid-transfer at almost exactly 120s of client silence. */
+    private static final long PING_INTERVAL_MS = 30_000;
 
     private static final class Inflight {
         final CompletableFuture<byte[]> done = new CompletableFuture<>();
@@ -51,6 +60,23 @@ public final class BlobStream implements AutoCloseable {
         this.out = out;
         this.writer = Threads.start("mesh-blobstream-w", this::writeLoop);
         this.reader = Threads.start("mesh-blobstream-r", () -> readLoop(in));
+        this.pinger = Threads.start("mesh-blobstream-ping", this::pingLoop);
+    }
+
+    private void pingLoop() {
+        try {
+            while (!closed) {
+                Thread.sleep(PING_INTERVAL_MS);
+                if (!closed) {
+                    outbox.add(Tunnel.frame(PING, 0, new byte[0], 0, 0));
+                }
+            }
+        } catch (InterruptedException ignored) {
+            // closing
+        } catch (IOException impossible) {
+            // frame() only throws for a payload over MAX_PAYLOAD; PING's is empty
+            throw new AssertionError(impossible);
+        }
     }
 
     public static BlobStream connect(InetSocketAddress target, String token) throws IOException {
@@ -272,6 +298,7 @@ public final class BlobStream implements AutoCloseable {
     @Override
     public void close() {
         closed = true;
+        pinger.interrupt();
         outbox.offer(STOP);
         failAll(new IOException("blobstream closed"));
     }
