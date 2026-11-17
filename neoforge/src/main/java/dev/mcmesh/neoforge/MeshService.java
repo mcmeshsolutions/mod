@@ -54,6 +54,7 @@ public final class MeshService {
     public static volatile java.util.function.Consumer<String> afterHandoff;
     static {
         dev.mcmesh.core.GatewayClient.syncProgress = SyncProgress::report;
+        dev.mcmesh.core.GatewayClient.blobStreamTarget = () -> new InetSocketAddress(MeshConfig.RELAY_HOST.get(), MeshConfig.RELAY_PORT.get());
         GatewayClient.hwScore = HostBench::bidScore;
         GatewayClient.playerCount = LoadShed::reportedPlayers;
         GatewayClient.loadLevel = LoadShed::reportedLevel;

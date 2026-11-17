@@ -664,7 +664,49 @@ public final class GatewayClient {
         return new RevisionFiles(o.get("rev").getAsString(), chunks, aux);
     }
 
+    /** Optional relay agent address (e.g. relayHost:relayPort) for persistent framed blob streaming. */
+    public static volatile java.util.function.Supplier<java.net.InetSocketAddress> blobStreamTarget = () -> null;
+    private volatile BlobStream blobStream;
+    private volatile long blobStreamDisabledUntil;
+
+    private synchronized BlobStream acquireBlobStream() {
+        BlobStream cur = blobStream;
+        if (cur != null && cur.isAlive()) {
+            return cur;
+        }
+        if (System.currentTimeMillis() < blobStreamDisabledUntil) {
+            return null;
+        }
+        java.net.InetSocketAddress target = blobStreamTarget.get();
+        if (target == null || token == null || token.isEmpty()) {
+            return null;
+        }
+        try {
+            BlobStream fresh = BlobStream.connect(target, token);
+            blobStream = fresh;
+            return fresh;
+        } catch (IOException e) {
+            blobStreamDisabledUntil = System.currentTimeMillis() + 30_000;
+            return null;
+        }
+    }
+
     public byte[] blobGet(byte[] hash) throws IOException, GatewayException {
+        BlobStream s = acquireBlobStream();
+        if (s != null) {
+            try {
+                return s.fetch(hash);
+            } catch (GatewayException g) {
+                throw g;
+            } catch (IOException e) {
+                synchronized (this) {
+                    if (blobStream == s) {
+                        blobStream.close();
+                        blobStream = null;
+                    }
+                }
+            }
+        }
         return exec("/v1/blobs/" + Bytes.hex(hash), "GET", HttpRequest.BodyPublishers.noBody(), "application/octet-stream");
     }
 
