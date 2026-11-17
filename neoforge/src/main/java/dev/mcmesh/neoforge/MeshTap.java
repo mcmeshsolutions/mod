@@ -57,7 +57,7 @@ public final class MeshTap {
             String ticket = new dev.mcmesh.core.GatewayClient(MeshConfig.API_URL.get(), token).ticket(world);
             return host + "\0mesh=" + ticket;
         } catch (Exception e) {
-            com.mojang.logging.LogUtils.getLogger().error("mesh ticket failed, connecting without one", e);
+            com.mojang.logging.LogUtils.getLogger().error("mesh ticket failed for world {}, connecting without one: {}", world, e.toString());
             return host;
         }
     }

@@ -1,5 +1,6 @@
 package dev.mcmesh.neoforge.client;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -10,9 +11,11 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ScreenEvent;
+import org.slf4j.Logger;
 
 @EventBusSubscriber(modid = "mcmesh", value = Dist.CLIENT)
 public final class ClientHooks {
+    private static final Logger LOG = LogUtils.getLogger();
     private static Button convert;
 
     private ClientHooks() { }
@@ -65,7 +68,18 @@ public final class ClientHooks {
             return;
         }
         boolean announced = Standby.switching();
-        if (!dev.mcmesh.core.SessionLoss.holdDisconnectScreen(HostFlow.guestAliveAt, System.currentTimeMillis(), announced, Standby.active())) {
+        boolean hold = dev.mcmesh.core.SessionLoss.holdDisconnectScreen(HostFlow.guestAliveAt, System.currentTimeMillis(), announced, Standby.active());
+        LOG.info("disconnect screen opening: announced={} hold={} reason={}", announced, hold, original.getNarrationMessage().getString());
+        if (!hold) {
+            return;
+        }
+        String world = HostFlow.guestWorld;
+        // every failed reconnect attempt surfaces as a brand new DisconnectedScreen here, indistinguishable
+        // from the original drop - without a shared budget this masks the real reason with a "you will be
+        // reconnected automatically" screen forever instead of ever showing the player what actually failed
+        if (!announced && world != null && !Standby.reconnectBudgetOk()) {
+            LOG.info("reconnect budget exhausted for world {}, showing the real disconnect screen", world);
+            Standby.endReconnectEpisode();
             return;
         }
         // players never see the plain Server Disconnected screen while a world changes hands
@@ -73,7 +87,6 @@ public final class ClientHooks {
                 ? "Handing the world over. You will be reconnected automatically."
                 : "The host went away. Waiting for the world to continue, you will be reconnected automatically.", 0, null);
         e.setNewScreen(wait);
-        String world = HostFlow.guestWorld;
         if (!announced && world != null) {
             Standby.reconnect(world, original, wait);
         }
@@ -154,6 +167,7 @@ public final class ClientHooks {
     public static void hud(net.neoforged.neoforge.client.event.RenderGuiEvent.Post e) {
         if (HostHealthHud.joinedWorld(Minecraft.getInstance()) != null) {
             HostFlow.guestAliveAt = System.currentTimeMillis();
+            Standby.endReconnectEpisode();
         }
         if (dev.mcmesh.neoforge.MeshConfig.HUD_ALWAYS_VISIBLE.get()) {
             drawStatusInfo(e.getGuiGraphics());

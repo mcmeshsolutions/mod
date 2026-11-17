@@ -1,5 +1,6 @@
 package dev.mcmesh.neoforge.client;
 
+import com.mojang.logging.LogUtils;
 import dev.mcmesh.core.GatewayClient;
 import dev.mcmesh.core.Identity;
 import dev.mcmesh.neoforge.MeshAuth;
@@ -8,13 +9,63 @@ import dev.mcmesh.neoforge.MeshConfig;
 import dev.mcmesh.neoforge.MeshService;
 import dev.mcmesh.neoforge.MeshTap;
 import java.nio.file.Path;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
+import org.slf4j.Logger;
 
 /** Takes the host lease for a synced world, syncs its folder into saves/ and opens it as the integrated server. */
 public final class HostFlow {
+    private static final Logger LOG = LogUtils.getLogger();
+    /** Hard ceiling on the gateway round-trip to take a lease: some hangs (e.g. a slow DNS lookup that
+     *  outlives the HttpClient's own connect timeout) never throw and never log, so without this the player
+     *  is stuck on a static status line forever with nothing in latest.log to explain why. This covers the
+     *  lease handshake AND the initial world sync in one call, and a full resync of a large modpack world
+     *  can legitimately run for minutes - 45s was tuned for catching a genuine hang, not for how long a
+     *  real, healthy sync takes, and was firing on the latter (confirmed 2026-11-17: the lease stayed
+     *  ACTIVE well past 45s once the heartbeat had its own connection, so the sync just needed more time). */
+    private static final long HOST_TIMEOUT_MS = 600_000;
+
     private HostFlow() { }
+
+    /** Runs status.accept and also logs it, so a stuck host/create flow leaves a trail of how far it got. */
+    private static void tell(Consumer<String> status, String s) {
+        LOG.info("host flow: {}", s);
+        status.accept(s);
+    }
+
+    /** Runs work on its own thread with a hard deadline, so a silent, non-throwing hang below this level
+     *  (e.g. a DNS lookup outliving HttpClient's connect timeout) still surfaces as a visible, logged failure
+     *  instead of leaving the caller's screen frozen forever. */
+    private static <T> T withTimeout(long timeoutMs, Callable<T> work) throws Exception {
+        AtomicReference<T> result = new AtomicReference<>();
+        AtomicReference<Exception> failure = new AtomicReference<>();
+        CountDownLatch done = new CountDownLatch(1);
+        Thread worker = new Thread(() -> {
+            try {
+                result.set(work.call());
+            } catch (Exception e) {
+                failure.set(e);
+            } finally {
+                done.countDown();
+            }
+        }, "mesh-host-call");
+        worker.setDaemon(true);
+        worker.start();
+        if (!done.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+            worker.interrupt();
+            throw new TimeoutException("timed out after " + (timeoutMs / 1000) + "s");
+        }
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+        return result.get();
+    }
 
     /** Name of the host a guest session is connected to, for the pause menu. */
     static volatile String guestOf;
@@ -37,11 +88,17 @@ public final class HostFlow {
         Standby.stop();
         MeshService.afterHandoff = Standby::rejoin;
         MeshService.handoffWarning = HostFlow::warnHandoff;
-        status.accept("Signing in");
+        tell(status, "Signing in");
         Identity id = MeshAuth.cached();
         Path root = mc.gameDirectory.toPath().resolve("saves").resolve(saveName(w.id())).toAbsolutePath().normalize();
-        status.accept("Taking the host lease and syncing the world");
-        MeshService s = MeshService.join(root, w.id(), id.token(), id.name(), 1, Runtime.getRuntime().availableProcessors());
+        tell(status, "Taking the host lease and syncing the world");
+        MeshService s;
+        try {
+            s = withTimeout(HOST_TIMEOUT_MS,
+                    () -> MeshService.join(root, w.id(), id.token(), id.name(), 1, Runtime.getRuntime().availableProcessors()));
+        } catch (TimeoutException e) {
+            return "Timed out taking the host lease - the gateway or network may be unreachable. Try again.";
+        }
         if (s == null) {
             String why = dev.mcmesh.neoforge.ModGuard.problem;
             if (why != null) {
@@ -90,14 +147,25 @@ public final class HostFlow {
         Standby.stop();
         MeshService.afterHandoff = Standby::rejoin;
         MeshService.handoffWarning = HostFlow::warnHandoff;
-        status.accept("Signing in");
+        tell(status, "Signing in");
         Identity id = MeshAuth.cached();
-        status.accept("Creating the world at the gateway");
+        tell(status, "Creating the world at the gateway");
         GatewayClient gw = new GatewayClient(MeshConfig.API_URL.get(), id.token());
-        String wid = gw.createWorld(name, net.minecraft.SharedConstants.getCurrentVersion().getName(), "neoforge");
-        Path root = mc.gameDirectory.toPath().resolve("saves").resolve(saveName(wid)).toAbsolutePath().normalize();
-        java.nio.file.Files.createDirectories(root);
-        MeshService s = MeshService.join(root, wid, id.token(), id.name(), 1, Runtime.getRuntime().availableProcessors());
+        MeshService s;
+        Path root;
+        String wid;
+        try {
+            wid = withTimeout(HOST_TIMEOUT_MS,
+                    () -> gw.createWorld(name, net.minecraft.SharedConstants.getCurrentVersion().getName(), "neoforge"));
+            root = mc.gameDirectory.toPath().resolve("saves").resolve(saveName(wid)).toAbsolutePath().normalize();
+            java.nio.file.Files.createDirectories(root);
+            Path finalRoot = root;
+            String finalWid = wid;
+            s = withTimeout(HOST_TIMEOUT_MS,
+                    () -> MeshService.join(finalRoot, finalWid, id.token(), id.name(), 1, Runtime.getRuntime().availableProcessors()));
+        } catch (TimeoutException e) {
+            return "Timed out creating the world at the gateway - the gateway or network may be unreachable. Try again.";
+        }
         if (s == null) {
             return "Could not take the host lease for the new world.";
         }

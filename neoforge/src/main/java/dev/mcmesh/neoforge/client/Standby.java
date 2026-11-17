@@ -19,10 +19,20 @@ public final class Standby {
     private static final long POLL_MS = 5_000;
     private static final long WARM_SYNC_MS = 30_000;
     private static final long GRACE_MS = 150_000;
+    /** How long a run of unannounced-drop reconnect attempts gets before giving up and showing the real
+     *  disconnect reason. Without this, every failed attempt looks like a brand new drop to ClientHooks
+     *  (each one calls reconnect() again, which only ever tries once itself) and the player is stuck on
+     *  a "you will be reconnected automatically" screen forever instead of seeing why it keeps failing. */
+    private static final long RECONNECT_EPISODE_CAP_MS = 90_000;
     private static volatile Thread running;
     private static volatile long switchUntil;
     private static volatile long hudSeconds = -1;
     private static volatile long hudAt;
+    /** 0 when no unannounced-drop reconnect episode is in progress; otherwise when the first attempt in
+     *  the current run started, so repeated ClientHooks-triggered retries share one budget instead of
+     *  each getting its own fresh one. */
+    private static volatile long reconnectEpisodeStart;
+    private static volatile int reconnectAttempt;
 
     /** True while a host switch is under way, so the plain Server Disconnected screen stays out of the way. */
     public static boolean switching() {
@@ -47,6 +57,28 @@ public final class Standby {
     }
 
     /**
+     * True while an unannounced-drop reconnect run is still within its overall time budget. ClientHooks
+     * checks this before starting another reconnect() - without it, a connect attempt that fails quickly
+     * looks to ClientHooks like a brand new disconnect, so it calls reconnect() again, which only ever
+     * tries once per call and returns; that chain repeats forever with no visible explanation. Sharing one
+     * budget across the whole chain means it eventually gives up and shows the real disconnect reason.
+     */
+    public static boolean reconnectBudgetOk() {
+        long start = reconnectEpisodeStart;
+        return start == 0 || System.currentTimeMillis() - start < RECONNECT_EPISODE_CAP_MS;
+    }
+
+    /** Called when the budget above runs out (or the player genuinely reconnects) so the next unrelated
+     *  drop starts its own fresh budget instead of inheriting whatever was left of this one. */
+    public static void endReconnectEpisode() {
+        if (reconnectEpisodeStart != 0) {
+            LOG.info("reconnect episode ending after {} attempt(s), {} ms", reconnectAttempt, System.currentTimeMillis() - reconnectEpisodeStart);
+        }
+        reconnectEpisodeStart = 0;
+        reconnectAttempt = 0;
+    }
+
+    /**
      * The connection to a mesh world dropped without a handover being announced (the host quit, crashed or lost its link).
      * Waits for the world to continue elsewhere and reconnects as a guest. A machine that is allowed to host is taken care of
      * by the standby loop, which bids for the world itself. If nothing happens within two minutes the original
@@ -55,6 +87,11 @@ public final class Standby {
     public static void reconnect(String worldId, net.minecraft.client.gui.screens.Screen original, HandoverScreen wait) {
         Minecraft mc = Minecraft.getInstance();
         markSwitching(150_000);
+        if (reconnectEpisodeStart == 0) {
+            reconnectEpisodeStart = System.currentTimeMillis();
+        }
+        int attempt = ++reconnectAttempt;
+        LOG.info("reconnect attempt {} for world {} ({} ms into this episode)", attempt, worldId, System.currentTimeMillis() - reconnectEpisodeStart);
         Thread t = new Thread(() -> {
             long end = System.currentTimeMillis() + 120_000;
             try {
@@ -67,9 +104,11 @@ public final class Standby {
                             continue;
                         }
                         if (w.host() != null && w.host().equalsIgnoreCase(id.name())) {
+                            LOG.info("reconnect attempt {}: this machine is already the host again, stopping", attempt);
                             return;
                         }
                         if ("LOCKED".equals(w.state()) && w.host() != null && w.hostReady()) {
+                            LOG.info("reconnect attempt {}: {} reports ready as host, joining", attempt, w.host());
                             wait.line("Reconnecting to " + w.host() + ".");
                             switchUntil = 0;
                             mc.execute(() -> HostFlow.join(w, l.relay(), new TitleScreen()));
@@ -77,11 +116,12 @@ public final class Standby {
                         }
                     }
                 }
+                LOG.info("reconnect attempt {}: no host became ready within 120s", attempt);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
             } catch (Exception e) {
-                LOG.warn("reconnect wait failed: {}", e.toString());
+                LOG.warn("reconnect attempt {} failed: {}", attempt, e.toString());
             }
             switchUntil = 0;
             mc.execute(() -> {
