@@ -25,7 +25,7 @@ public final class PackPreLaunch {
     static final String DEFAULT_UPDATE_URL = "https://play.23012006.xyz/dl/pack-manifest.json";
 
     /** Bump this (and have PackBuilder's updaterVersion match) whenever mcmesh-updater.jar itself changes. */
-    static final int SELF_VERSION = 1;
+    static final int SELF_VERSION = 3;
 
     private PackPreLaunch() { }
 
@@ -112,7 +112,8 @@ public final class PackPreLaunch {
         String confirmed;
         try {
             confirmed = Files.readAllLines(instanceCfg).stream()
-                    .filter(l -> l.startsWith("OverrideMemory=") || l.startsWith("MinMemAlloc=") || l.startsWith("MaxMemAlloc="))
+                    .filter(l -> l.startsWith("OverrideMemory=") || l.startsWith("MinMemAlloc=") || l.startsWith("MaxMemAlloc=")
+                            || l.startsWith("OverrideJavaArgs=") || l.startsWith("JvmArgs="))
                     .reduce("", (acc, l) -> acc + l + " ");
         } catch (IOException e) {
             confirmed = "(could not read instance.cfg back: " + e.getMessage() + ")";

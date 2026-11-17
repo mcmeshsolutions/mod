@@ -152,6 +152,62 @@ public final class PackBuilder {
         return false;
     }
 
+    /**
+     * PrismLauncher's "Wrapper command" prepends this verbatim in front of the already-built java invocation
+     * (java binary, then Prism's own -Xms/-Xmx/-cp/mainclass args) - it does not re-run or re-read instance.cfg
+     * for that invocation. Rewriting MinMemAlloc/MaxMemAlloc in instance.cfg from the pre-launch step
+     * (PackPreLaunch/JvmMemory) never takes effect for the launch in flight because Prism already loaded and
+     * cached those settings before running any custom command, and overwrites the file with that stale cache
+     * again on exit - confirmed against a real launch's PrismLauncher log. The JVM itself takes the *last*
+     * -Xmx/-Xms it sees rather than erroring on a duplicate, so this script finds the heap size PackPreLaunch
+     * just computed (mcmesh-update/jvm-mem.txt, written moments earlier in the same pre-launch step) and
+     * inserts a fresh -Xmx/-Xms right before the classpath/jar flag, so it wins over whatever instance.cfg
+     * already baked in.
+     */
+    static final String HEAP_WRAPPER_SCRIPT = """
+            #!/usr/bin/env bash
+            set -u
+
+            dir="$(cd "$(dirname "$0")" && pwd)"
+            state=$(find "$dir" -mindepth 3 -maxdepth 3 -path '*/mcmesh-update/jvm-mem.txt' 2>/dev/null | head -1)
+            xmx=""
+            if [ -n "$state" ]; then
+                xmx=$(sed -n 's/^xmxMb=//p' "$state")
+            fi
+
+            if [ -z "${xmx:-}" ]; then
+                exec "$@"
+            fi
+
+            xms=$xmx
+            if [ "$xms" -gt 1024 ]; then
+                xms=1024
+            fi
+
+            args=("$@")
+            insert_at=${#args[@]}
+            for i in "${!args[@]}"; do
+                case "${args[$i]}" in
+                    -cp|-classpath|-jar)
+                        insert_at=$i
+                        break
+                        ;;
+                esac
+            done
+
+            new_args=("${args[@]:0:insert_at}" "-Xmx${xmx}m" "-Xms${xms}m" "${args[@]:insert_at}")
+            exec "${new_args[@]}"
+            """;
+
+    /** Writes the heap-override wrapper script next to the updater jar, executable, so a fresh pack build
+     *  always ships a version-independent copy (it never needs to change unless its own logic does). */
+    private static void writeHeapWrapperScript(Path outDir) throws IOException {
+        Path script = outDir.resolve("updater").resolve("mcmesh-heap-wrapper.sh");
+        Files.createDirectories(script.getParent());
+        Files.writeString(script, HEAP_WRAPPER_SCRIPT, StandardCharsets.UTF_8);
+        script.toFile().setExecutable(true, false);
+    }
+
     /** So a release that ships an updater also tells whoever is packaging the instance how to wire it in. */
     private static void writeSetupInstructions(Path outDir, String packId) throws IOException {
         String text = """
@@ -172,12 +228,26 @@ public final class PackBuilder {
                    the launch fails ("execve: No such file or directory") because the spaced paths get merged
                    into one token:
                    PreLaunchCommand=\\"$INST_JAVA\\" -jar \\"$INST_DIR/mcmesh-updater.jar\\" \\"$INST_MC_DIR\\"
-                3. Ship the instance with that pre-launch command and the jar already in place so players never
-                   have to configure anything - the updater runs once before every launch, applies any pending
-                   mods/config diff and breaking-change patch, tunes the JVM heap for that machine, and quietly
-                   does nothing (exit 0) if the gateway is unreachable.
-                4. The updater can replace itself: ship a new build by passing it to `packBuilder build` again
+                3. Also copy updater/mcmesh-heap-wrapper.sh into the instance root (next to mcmesh-updater.jar)
+                   and make it executable, then set "Wrapper command" to its path:
+
+                   "$INST_DIR/mcmesh-heap-wrapper.sh"
+
+                   This step is required for the heap tuning in step 2 to actually take effect. PrismLauncher
+                   loads instance.cfg's memory settings once, before running any custom command, and writes
+                   that same cached copy back to instance.cfg on exit - so the pre-launch command rewriting
+                   MinMemAlloc/MaxMemAlloc there never changes the launch in flight and gets reverted anyway.
+                   The wrapper command instead receives the already-built java invocation and inserts a fresh
+                   -Xmx/-Xms into it just before launch, which the JVM honors over the earlier ones Prism baked
+                   in from instance.cfg. Same quote-escaping rule as step 2 if hand-baking into instance.cfg:
+                   WrapperCommand=\\"$INST_DIR/mcmesh-heap-wrapper.sh\\"
+                4. Ship the instance with that pre-launch command, wrapper command and both files already in
+                   place so players never have to configure anything - the updater runs once before every
+                   launch, applies any pending mods/config diff and breaking-change patch, tunes the JVM heap
+                   for that machine, and quietly does nothing (exit 0) if the gateway is unreachable.
+                5. The updater can replace itself: ship a new build by passing it to `packBuilder build` again
                    with a higher version number as the last argument; players get it automatically, no reinstall.
+                   The wrapper script does not need this - it is version-independent, copy it once.
                 """.formatted(packId);
         Files.writeString(outDir.resolve("SETUP.md"), text, StandardCharsets.UTF_8);
     }
@@ -225,6 +295,8 @@ public final class PackBuilder {
             System.out.println("Upload " + a[5] + " so that manifest.json is at your packUpdateUrl and files/ sits next to it.");
             if (hasUpdater) {
                 System.out.println("Also upload " + a[5] + "/updater/mcmesh-updater.jar next to manifest.json.");
+                writeHeapWrapperScript(Path.of(a[5]));
+                System.out.println("Also upload " + a[5] + "/updater/mcmesh-heap-wrapper.sh next to it.");
                 writeSetupInstructions(Path.of(a[5]), a[2]);
                 System.out.println("Wrote " + a[5] + "/SETUP.md: how to preconfigure a PrismLauncher instance to run the updater.");
             }

@@ -199,7 +199,7 @@ final class JvmMemory {
                     case "OverrideMemory" -> { out.add("OverrideMemory=true"); handled.add(key); }
                     case "MinMemAlloc" -> { out.add("MinMemAlloc=" + plan.xmsMb()); handled.add(key); }
                     case "MaxMemAlloc" -> { out.add("MaxMemAlloc=" + plan.xmxMb()); handled.add(key); }
-                    case "OverrideJavaArgs" -> { out.add(line); handled.add(key); }
+                    case "OverrideJavaArgs" -> { out.add(userHasCustomArgs ? line : "OverrideJavaArgs=true"); handled.add(key); }
                     case "JvmArgs" -> { out.add(userHasCustomArgs ? line : "JvmArgs=" + RECOMMENDED_GC_FLAGS); handled.add(key); }
                     default -> out.add(line);
                 }

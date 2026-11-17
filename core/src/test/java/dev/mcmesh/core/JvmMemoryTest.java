@@ -40,6 +40,16 @@ class JvmMemoryTest {
     }
 
     @Test
+    void applyToInstanceConfigReEnablesOverrideJavaArgsWhenItWasExplicitlyFalse() throws Exception {
+        Path cfg = game.resolve("instance.cfg");
+        Files.writeString(cfg, "OverrideJavaArgs=false\nJvmArgs=-Dold.custom=1\n");
+        JvmMemory.applyToInstanceConfig(cfg, new JvmMemory.Plan(4096, 1024, false, false));
+        List<String> out = Files.readAllLines(cfg, StandardCharsets.UTF_8);
+        assertTrue(out.contains("OverrideJavaArgs=true"), "the override flag must flip to true or the rewritten JvmArgs is ignored");
+        assertTrue(out.contains("JvmArgs=" + JvmMemory.RECOMMENDED_GC_FLAGS));
+    }
+
+    @Test
     void applyToInstanceConfigInsertsMissingKeysInsideGeneralNotPastALaterSection() throws Exception {
         Path cfg = game.resolve("instance.cfg");
         Files.writeString(cfg, "[General]\nname=My Pack\n\n[UI]\nmods_Page\\Columns=\"abc\"\n");
