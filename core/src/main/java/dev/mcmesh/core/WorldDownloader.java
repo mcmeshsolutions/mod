@@ -78,7 +78,13 @@ public final class WorldDownloader {
         void update(long doneFiles, long totalFiles, long doneBytes);
     }
 
-    private static final int THREADS = 8;
+    /** How many chunk/aux fetches run at once; each one is its own TCP connection since the gateway client
+     *  is pinned to HTTP/1.1 (no multiplexing). Mutable, same pattern as GatewayClient.syncProgress and
+     *  friends below, so the mod's config (syncThreads) can tune it without this module depending on
+     *  NeoForge's config system. Defaulted down from an earlier 8 after intermittent "HTTP connect timed
+     *  out" failures during a full resync (2026-11-17) - lower concurrency avoids straining the connection
+     *  limit on some networks, at the cost of a slower sync on networks that were never the problem. */
+    public static volatile java.util.function.IntSupplier threads = () -> 2;
 
     private WorldDownloader() { }
 
@@ -97,7 +103,7 @@ public final class WorldDownloader {
     }
 
     private static int fetchAll(GatewayClient gw, List<RevisionFiles.Chunk> chunks, List<RevisionFiles.Aux> aux, Sink sink, Progress progress) throws IOException, GatewayException {
-        ExecutorService pool = Executors.newFixedThreadPool(THREADS);
+        ExecutorService pool = Executors.newFixedThreadPool(Math.max(1, threads.getAsInt()));
         try {
             List<Future<?>> jobs = new ArrayList<>();
             long total = chunks.size() + aux.size();

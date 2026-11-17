@@ -55,6 +55,7 @@ public final class MeshService {
     static {
         dev.mcmesh.core.GatewayClient.syncProgress = SyncProgress::report;
         dev.mcmesh.core.GatewayClient.blobStreamTarget = () -> new InetSocketAddress(MeshConfig.RELAY_HOST.get(), MeshConfig.RELAY_PORT.get());
+        dev.mcmesh.core.WorldDownloader.threads = MeshConfig.SYNC_THREADS::get;
         GatewayClient.hwScore = HostBench::bidScore;
         GatewayClient.playerCount = LoadShed::reportedPlayers;
         GatewayClient.loadLevel = LoadShed::reportedLevel;
