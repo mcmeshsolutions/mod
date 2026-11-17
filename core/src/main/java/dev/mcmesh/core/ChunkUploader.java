@@ -141,13 +141,16 @@ public final class ChunkUploader {
                 fallback.add(i);
             } else {
                 pipelined.add(i);
-                futures.add(f);
+                // clock starts now, at creation, so a dead stream with many items still pending times
+                // all of them out concurrently in ~30s total instead of 30s each, one at a time, in the
+                // loop below - see WorldDownloader.fetchAll for the same fix and why it matters.
+                futures.add(f.orTimeout(30, java.util.concurrent.TimeUnit.SECONDS));
             }
         }
         for (int j = 0; j < pipelined.size(); j++) {
             int i = pipelined.get(j);
             try {
-                byte[] hash = futures.get(j).get(30, java.util.concurrent.TimeUnit.SECONDS);
+                byte[] hash = futures.get(j).get();
                 if (!Arrays.equals(hash, Bytes.sha256(items.get(i).getValue()))) {
                     throw new IOException("upload stored under an unexpected hash");
                 }
@@ -155,8 +158,6 @@ public final class ChunkUploader {
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 throw new IOException("interrupted", ie);
-            } catch (java.util.concurrent.TimeoutException te) {
-                fallback.add(i);
             } catch (java.util.concurrent.ExecutionException ee) {
                 if (ee.getCause() instanceof GatewayException g) {
                     throw g;
