@@ -54,8 +54,8 @@ public final class MeshService {
     public static volatile java.util.function.Consumer<String> afterHandoff;
     static {
         dev.mcmesh.core.GatewayClient.syncProgress = SyncProgress::report;
-        dev.mcmesh.core.GatewayClient.blobStreamTarget = () -> new InetSocketAddress(MeshConfig.RELAY_HOST.get(), MeshConfig.RELAY_PORT.get());
         dev.mcmesh.core.WorldDownloader.threads = MeshConfig.SYNC_THREADS::get;
+        dev.mcmesh.core.GatewayClient.blobStreamTarget = () -> new InetSocketAddress(MeshConfig.RELAY_HOST.get(), MeshConfig.RELAY_PORT.get());
         GatewayClient.hwScore = HostBench::bidScore;
         GatewayClient.playerCount = LoadShed::reportedPlayers;
         GatewayClient.loadLevel = LoadShed::reportedLevel;
@@ -80,7 +80,9 @@ public final class MeshService {
         this.uploader = new ChunkUploader(gw, lease);
         this.commits = new Commits(gw, lease);
         this.tunnel = newTunnel();
-        this.session = LeaseSession.over(gw, lease, why -> {
+        // its own connection pool, so a busy world sync or autosave upload on gw can never starve the
+        // heartbeat long enough for the gateway to decide this lease went silent and kill it
+        this.session = LeaseSession.over(gw.sibling(), lease, why -> {
             fenced = true;
             LOG.error("lease fenced: {}", why);
             Runnable a = fenceAction;

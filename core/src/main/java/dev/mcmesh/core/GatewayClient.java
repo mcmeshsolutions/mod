@@ -29,6 +29,13 @@ public final class GatewayClient {
         this.token = token;
     }
 
+    /** A second client, same gateway and token but its own HttpClient and connection pool. HTTP/1.1 does
+     *  not multiplex, so a caller that must never wait behind another caller's bulk traffic on the same
+     *  client - a heartbeat loop stuck behind a world sync's chunk fetches, say - needs its own. */
+    public GatewayClient sibling() {
+        return new GatewayClient(base, token);
+    }
+
     private static final int RATE_LIMIT_RETRIES = 3;
     private static final int CONNECTION_RETRIES = 2;
 
