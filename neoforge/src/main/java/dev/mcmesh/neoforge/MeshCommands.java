@@ -409,6 +409,16 @@ public final class MeshCommands {
                 .then(Commands.argument("hours", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 720))
                         .executes(c -> enableSinceLensHours(c.getSource(), com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "hours"))))
                 .executes(c -> enableSinceLensLastLogin(c.getSource())));
+        d.register(Commands.literal("meshwizard")
+                .then(Commands.literal("reset").executes(c -> {
+                    dev.mcmesh.core.OnboardingWizard.resetWizard();
+                    c.getSource().sendSuccess(() -> Component.literal("Onboarding wizard reset. Will appear on next title screen launch."), true);
+                    return 1;
+                }))
+                .executes(c -> {
+                    c.getSource().sendSuccess(() -> Component.literal("Mesh Wizard is accessible from the title screen via 'Setup wizard' button or run '/meshwizard reset' to trigger on next restart."), false);
+                    return 1;
+                }));
         d.register(Commands.literal("meshpregen")
                 .requires(MeshCommands::canEdit)
                 .then(Commands.literal("status").executes(c -> {

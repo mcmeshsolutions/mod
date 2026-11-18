@@ -33,10 +33,17 @@ public final class ClientHooks {
             return;
         }
         if (e.getScreen() instanceof net.minecraft.client.gui.screens.TitleScreen t) {
+            if (dev.mcmesh.core.OnboardingWizard.shouldShowWizard()) {
+                dev.mcmesh.core.OnboardingWizard.markFirstLaunchCompleted();
+                Minecraft.getInstance().setScreen(new OnboardingWizardScreen(t));
+                return;
+            }
             e.addListener(Button.builder(Component.literal("Mesh settings"), b -> Minecraft.getInstance().setScreen(ConfigScreen.open(t)))
                     .bounds(4, 4, 90, 20).build());
             e.addListener(Button.builder(Component.literal("Shared worlds"), b -> Minecraft.getInstance().setScreen(new SyncedWorldsScreen(t)))
                     .bounds(4, 28, 90, 20).build());
+            e.addListener(Button.builder(Component.literal("Setup wizard"), b -> Minecraft.getInstance().setScreen(new OnboardingWizardScreen(t)))
+                    .bounds(4, 52, 90, 20).build());
             return;
         }
         if (!(e.getScreen() instanceof SelectWorldScreen s)) {
