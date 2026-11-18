@@ -50,7 +50,7 @@ public final class ClientHooks {
         if (!(e.getScreen() instanceof SelectWorldScreen s)) {
             return;
         }
-        convert = Button.builder(Component.literal("Convert to shared world"), b -> ask(s))
+        convert = Button.builder(Component.literal("Host on MCMesh"), b -> ask(s))
                 .bounds(s.width - 164, 22, 160, 20).build();
         e.addListener(convert);
     }
@@ -291,8 +291,8 @@ public final class ClientHooks {
                         mc.setScreen(new ConvertScreen(s, save, name));
                     }
                 });
-            }, Component.literal("Convert \"" + name + "\" to a shared world?"),
-                    Component.literal("A copy is uploaded to the gateway, including your inventory. The original save is not changed.")));
+            }, Component.literal("Host \"" + name + "\" on MCMesh?"),
+                    Component.literal("A copy is uploaded to the gateway with an instant invite link for friends. The original save is unchanged.")));
         });
     }
 
