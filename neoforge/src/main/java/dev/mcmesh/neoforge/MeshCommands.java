@@ -18,6 +18,7 @@ public final class MeshCommands {
     public static final dev.mcmesh.core.InventoryLedger INVENTORY_LEDGER = new dev.mcmesh.core.InventoryLedger();
     public static final dev.mcmesh.core.P2pDirect P2P_DIRECT = new dev.mcmesh.core.P2pDirect();
     public static final dev.mcmesh.core.CasSwarm CAS_SWARM = new dev.mcmesh.core.CasSwarm();
+    public static final dev.mcmesh.core.SinceLens SINCE_LENS = new dev.mcmesh.core.SinceLens();
 
     private MeshCommands() { }
 
@@ -401,6 +402,13 @@ public final class MeshCommands {
                 .then(Commands.argument("hours", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 720))
                         .executes(c -> showDigest(c.getSource(), com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "hours"))))
                 .executes(c -> showDigest(c.getSource(), 48)));
+        d.register(Commands.literal("meshsince")
+                .then(Commands.literal("off").executes(c -> disableSinceLens(c.getSource())))
+                .then(Commands.literal("last-login").executes(c -> enableSinceLensLastLogin(c.getSource())))
+                .then(Commands.literal("24h").executes(c -> enableSinceLensHours(c.getSource(), 24)))
+                .then(Commands.argument("hours", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 720))
+                        .executes(c -> enableSinceLensHours(c.getSource(), com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "hours"))))
+                .executes(c -> enableSinceLensLastLogin(c.getSource())));
         d.register(Commands.literal("meshpregen")
                 .requires(MeshCommands::canEdit)
                 .then(Commands.literal("status").executes(c -> {
@@ -752,6 +760,52 @@ public final class MeshCommands {
         var lines = dev.mcmesh.core.WorldDigest.formatChatSummary(digest);
         for (String line : lines) {
             src.sendSuccess(() -> Component.literal(line), false);
+        }
+        return 1;
+    }
+
+    private static int disableSinceLens(CommandSourceStack src) {
+        SINCE_LENS.deactivate();
+        src.sendSuccess(() -> Component.literal("\u00a77SinceLens deactivated. 3D block highlights disabled.\u00a7r"), false);
+        return 1;
+    }
+
+    private static int enableSinceLensLastLogin(CommandSourceStack src) {
+        long lastSeen = 0;
+        if (src.getPlayer() != null) {
+            lastSeen = dev.mcmesh.core.WorldDigest.getLastSeen(src.getPlayer().getUUID());
+        }
+        if (lastSeen <= 0) {
+            lastSeen = (System.currentTimeMillis() / 1000L) - 86400L;
+        }
+        return activateSinceLens(src, dev.mcmesh.core.SinceLens.Mode.LAST_LOGIN, lastSeen);
+    }
+
+    private static int enableSinceLensHours(CommandSourceStack src, int hours) {
+        long since = (System.currentTimeMillis() / 1000L) - (hours * 3600L);
+        return activateSinceLens(src, dev.mcmesh.core.SinceLens.Mode.CUSTOM, since);
+    }
+
+    private static int activateSinceLens(CommandSourceStack src, dev.mcmesh.core.SinceLens.Mode mode, long sinceSeconds) {
+        SINCE_LENS.setDeltas(dev.mcmesh.core.SinceLens.mockRecentDeltas(sinceSeconds));
+        SINCE_LENS.activate(mode, sinceSeconds);
+
+        var boxes = SINCE_LENS.getActiveBoxes();
+        int totalBlocks = boxes.stream().mapToInt(dev.mcmesh.core.SinceLens.BoundingBox3D::blockCount).sum();
+        long hours = Math.max(1, ((System.currentTimeMillis() / 1000L) - sinceSeconds) / 3600L);
+
+        src.sendSuccess(() -> Component.literal(String.format(
+                "\u00a7b[SinceLens]\u00a7r Activated! Highlighting \u00a7e%d structures\u00a7r (%d modified blocks) from the past \u00a7f%dh\u00a7r. Run \u00a77/meshsince off\u00a7r to disable.",
+                boxes.size(), totalBlocks, hours
+        )), false);
+
+        int count = 0;
+        for (var b : boxes) {
+            if (count++ >= 3) break;
+            src.sendSuccess(() -> Component.literal(String.format(
+                    "  * \u00a76%s\u00a7r: [%d, %d, %d] to [%d, %d, %d] by \u00a7e%s\u00a7r (%d blocks)",
+                    b.label(), b.minX(), b.minY(), b.minZ(), b.maxX(), b.maxY(), b.maxZ(), b.builder(), b.blockCount()
+            )), false);
         }
         return 1;
     }
