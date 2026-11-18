@@ -59,6 +59,20 @@ public final class MeshEvents {
     }
 
     @SubscribeEvent
+    public static void playerLoginDigest(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent e) {
+        if (e.getEntity() instanceof net.minecraft.server.level.ServerPlayer p) {
+            long prev = dev.mcmesh.core.WorldDigest.recordPlayerLogin(p.getUUID());
+            long now = System.currentTimeMillis() / 1000L;
+            if (prev > 0 && (now - prev) >= 3600L) {
+                long hours = (now - prev) / 3600L;
+                p.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                        "\u00a7b[MCMesh]\u00a7r Welcome back! While you were offline (" + hours + "h), your team made changes. Run \u00a7e/meshdigest\u00a7r to view world patch notes."
+                ));
+            }
+        }
+    }
+
+    @SubscribeEvent
     public static void playerNameFormat(net.neoforged.neoforge.event.entity.player.PlayerEvent.NameFormat e) {
         if (Scratchpad.isInScratchpad(e.getEntity().getUUID())) {
             String timer = Scratchpad.getTimerText(e.getEntity().getUUID());

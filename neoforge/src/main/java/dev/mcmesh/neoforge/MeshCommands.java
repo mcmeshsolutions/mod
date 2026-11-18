@@ -397,6 +397,10 @@ public final class MeshCommands {
                         .then(Commands.literal("play").executes(c -> playCamera(c.getSource())))
                         .then(Commands.literal("stop").executes(c -> stopCamera(c.getSource())))
                         .then(Commands.literal("clear").executes(c -> clearCamera(c.getSource())))));
+        d.register(Commands.literal("meshdigest")
+                .then(Commands.argument("hours", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 720))
+                        .executes(c -> showDigest(c.getSource(), com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "hours"))))
+                .executes(c -> showDigest(c.getSource(), 48)));
         d.register(Commands.literal("meshpregen")
                 .requires(MeshCommands::canEdit)
                 .then(Commands.literal("status").executes(c -> {
@@ -733,6 +737,23 @@ public final class MeshCommands {
 
     private static int timelapseStatus(CommandSourceStack src) {
         return listCameraWaypoints(src);
+    }
+
+    private static int showDigest(CommandSourceStack src, int hours) {
+        MeshService cur = MeshService.current();
+        String world = cur != null ? cur.worldId() : MeshConfig.WORLD.get();
+        if (world == null || world.isEmpty()) world = "default";
+
+        String pUuid = src.getPlayer() != null ? src.getPlayer().getStringUUID() : "server";
+        String pName = src.getPlayer() != null ? src.getPlayer().getScoreboardName() : "Operator";
+        long since = (System.currentTimeMillis() / 1000L) - (hours * 3600L);
+
+        var digest = dev.mcmesh.core.WorldDigest.generateDigest(world, pUuid, pName, since);
+        var lines = dev.mcmesh.core.WorldDigest.formatChatSummary(digest);
+        for (String line : lines) {
+            src.sendSuccess(() -> Component.literal(line), false);
+        }
+        return 1;
     }
 }
 
