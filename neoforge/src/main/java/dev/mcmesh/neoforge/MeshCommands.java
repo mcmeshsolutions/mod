@@ -372,6 +372,31 @@ public final class MeshCommands {
                             c.getSource().sendSuccess(() -> Component.literal("Scrubbed timeline to revision " + rev + " (" + TIMELINE_LENS.getStatusLine() + ")"), false);
                             return 1;
                         }))));
+        d.register(Commands.literal("meshtimelapse")
+                .requires(MeshCommands::canEdit)
+                .then(Commands.literal("status").executes(c -> timelapseStatus(c.getSource())))
+                .then(Commands.literal("export")
+                        .executes(c -> exportTimelapse(c.getSource(), null, 2000))
+                        .then(Commands.argument("name", StringArgumentType.word())
+                                .executes(c -> exportTimelapse(c.getSource(), StringArgumentType.getString(c, "name"), 2000))
+                                .then(Commands.argument("intervalMs", com.mojang.brigadier.arguments.IntegerArgumentType.integer(100, 60000))
+                                        .executes(c -> exportTimelapse(c.getSource(), StringArgumentType.getString(c, "name"),
+                                                com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "intervalMs"))))))
+                .then(Commands.literal("cam")
+                        .then(Commands.literal("set")
+                                .executes(c -> setCameraWaypoint(c.getSource(), null))
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .executes(c -> setCameraWaypoint(c.getSource(), StringArgumentType.getString(c, "name")))))
+                        .then(Commands.literal("add")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .executes(c -> addCameraWaypoint(c.getSource(), StringArgumentType.getString(c, "name"), 5000))
+                                        .then(Commands.argument("durationMs", com.mojang.brigadier.arguments.IntegerArgumentType.integer(500, 60000))
+                                                .executes(c -> addCameraWaypoint(c.getSource(), StringArgumentType.getString(c, "name"),
+                                                        com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "durationMs"))))))
+                        .then(Commands.literal("list").executes(c -> listCameraWaypoints(c.getSource())))
+                        .then(Commands.literal("play").executes(c -> playCamera(c.getSource())))
+                        .then(Commands.literal("stop").executes(c -> stopCamera(c.getSource())))
+                        .then(Commands.literal("clear").executes(c -> clearCamera(c.getSource())))));
         d.register(Commands.literal("meshpregen")
                 .requires(MeshCommands::canEdit)
                 .then(Commands.literal("status").executes(c -> {
@@ -630,4 +655,84 @@ public final class MeshCommands {
         }
         return 1;
     }
+
+    private static int exportTimelapse(CommandSourceStack src, String customName, int intervalMs) {
+        MeshService cur = MeshService.current();
+        String world = cur != null ? cur.worldId() : MeshConfig.WORLD.get();
+        if (world == null || world.isEmpty()) {
+            src.sendFailure(Component.literal("No active mesh world found"));
+            return 0;
+        }
+        var dir = src.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("replay_recordings");
+        src.sendSuccess(() -> Component.literal("Starting ReplayMod timelapse synthesis for world '" + world + "'..."), false);
+        MeshTimelapse.exportReplayMod(
+                world,
+                dir,
+                intervalMs,
+                msg -> src.getServer().execute(() -> src.sendSuccess(() -> Component.literal(msg), true)),
+                err -> src.getServer().execute(() -> src.sendFailure(Component.literal(err)))
+        );
+        return 1;
+    }
+
+    private static int setCameraWaypoint(CommandSourceStack src, String name) {
+        var p = src.getPlayer();
+        if (p == null) {
+            src.sendFailure(Component.literal("Must be run by an in-game player"));
+            return 0;
+        }
+        var wp = MeshTimelapse.recordWaypoint(name, p.getX(), p.getY() + p.getEyeHeight(), p.getZ(), p.getYRot(), p.getXRot());
+        src.sendSuccess(() -> Component.literal(String.format("Recorded camera waypoint '%s' at [%.1f, %.1f, %.1f] (yaw: %.1f, pitch: %.1f)",
+                wp.name(), wp.x(), wp.y(), wp.z(), wp.yaw(), wp.pitch())), false);
+        return 1;
+    }
+
+    private static int addCameraWaypoint(CommandSourceStack src, String name, int durationMs) {
+        boolean ok = MeshTimelapse.addWaypointToPath(name, durationMs);
+        if (!ok) {
+            src.sendFailure(Component.literal("No saved waypoint named '" + name + "'. Record it first via '/meshtimelapse cam set " + name + "'"));
+            return 0;
+        }
+        var path = MeshTimelapse.getActivePath();
+        src.sendSuccess(() -> Component.literal(String.format("Added '%s' to active camera path (%d waypoints, %d ms total duration)",
+                name, path.size(), path.totalDurationMs())), false);
+        return 1;
+    }
+
+    private static int listCameraWaypoints(CommandSourceStack src) {
+        var saved = MeshTimelapse.getSavedWaypoints();
+        var path = MeshTimelapse.getActivePath();
+        src.sendSuccess(() -> Component.literal("=== ReplayMod Timelapse Camera Rig ==="), false);
+        src.sendSuccess(() -> Component.literal("Saved waypoints (" + saved.size() + "): " + String.join(", ", saved.keySet())), false);
+        src.sendSuccess(() -> Component.literal(String.format("Active path: %d waypoints, %d ms duration | Status: %s",
+                path.size(), path.totalDurationMs(), MeshTimelapse.isPlaying() ? "PLAYING" : "IDLE")), false);
+        return 1;
+    }
+
+    private static int playCamera(CommandSourceStack src) {
+        boolean ok = MeshTimelapse.startPlayback();
+        if (!ok) {
+            src.sendFailure(Component.literal("Cannot play camera path: active path needs at least 2 waypoints. Use '/meshtimelapse cam add <name>'"));
+            return 0;
+        }
+        src.sendSuccess(() -> Component.literal("Started cinematic camera playback (" + MeshTimelapse.getActivePath().totalDurationMs() + " ms)."), true);
+        return 1;
+    }
+
+    private static int stopCamera(CommandSourceStack src) {
+        MeshTimelapse.stopPlayback();
+        src.sendSuccess(() -> Component.literal("Cinematic camera playback stopped."), false);
+        return 1;
+    }
+
+    private static int clearCamera(CommandSourceStack src) {
+        MeshTimelapse.clearPath();
+        src.sendSuccess(() -> Component.literal("Cleared active camera path."), false);
+        return 1;
+    }
+
+    private static int timelapseStatus(CommandSourceStack src) {
+        return listCameraWaypoints(src);
+    }
 }
+
