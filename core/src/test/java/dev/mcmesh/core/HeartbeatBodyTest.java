@@ -35,6 +35,7 @@ class HeartbeatBodyTest {
         server.stop(0);
         GatewayClient.playerCount = () -> -1;
         GatewayClient.loadLevel = () -> -1;
+        GatewayClient.p2pDirectBytesSupplier = () -> 0L;
     }
 
     private GatewayClient client() {
@@ -45,9 +46,11 @@ class HeartbeatBodyTest {
     void playersAndLoadAreSentWhenKnown() throws Exception {
         GatewayClient.playerCount = () -> 3;
         GatewayClient.loadLevel = () -> 2;
+        GatewayClient.p2pDirectBytesSupplier = () -> 1048576L;
         client().heartbeat("l1", 4);
         assertEquals(3, seen.get().get("players").getAsInt());
         assertEquals(2, seen.get().get("load").getAsInt());
+        assertEquals(1048576L, seen.get().get("p2p_direct_bytes").getAsLong());
         assertEquals(4, seen.get().get("epoch").getAsLong());
     }
 
@@ -56,6 +59,7 @@ class HeartbeatBodyTest {
         client().heartbeat("l1", 4);
         assertFalse(seen.get().has("players"));
         assertFalse(seen.get().has("load"));
+        assertFalse(seen.get().has("p2p_direct_bytes"));
         GatewayClient.playerCount = () -> 0;
         client().heartbeat("l1", 4);
         assertEquals(0, seen.get().get("players").getAsInt(), "zero players is a real value");

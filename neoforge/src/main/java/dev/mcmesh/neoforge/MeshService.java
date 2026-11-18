@@ -60,6 +60,7 @@ public final class MeshService {
         GatewayClient.playerCount = LoadShed::reportedPlayers;
         GatewayClient.loadLevel = LoadShed::reportedLevel;
         GatewayClient.tpsSupplier = LoadShed::reportedTps;
+        GatewayClient.p2pDirectBytesSupplier = MeshCommands.P2P_DIRECT::getAndResetDirectBytes;
     }
 
     private final AuxSync aux = new AuxSync();

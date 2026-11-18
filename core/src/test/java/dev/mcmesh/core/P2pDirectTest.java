@@ -28,4 +28,15 @@ public class P2pDirectTest {
         assertEquals(P2pDirect.RouteMode.GATEWAY_RELAY, rSlow.mode());
         assertFalse(p2p.isDirect("peer-slow"));
     }
+
+    @Test
+    void directTrafficAccounting() {
+        P2pDirect p2p = new P2pDirect();
+        assertEquals(0, p2p.totalDirectBytes());
+        p2p.recordDirectBytes(4096);
+        p2p.recordDirectBytes(8192);
+        assertEquals(12288, p2p.totalDirectBytes());
+        assertEquals(12288, p2p.getAndResetDirectBytes());
+        assertEquals(0, p2p.totalDirectBytes());
+    }
 }

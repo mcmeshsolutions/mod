@@ -597,6 +597,9 @@ public final class GatewayClient {
     /** Active TPS, or negative when unknown; reported with each heartbeat. */
     public static volatile java.util.function.DoubleSupplier tpsSupplier = () -> -1.0;
 
+    /** Direct P2P bytes transferred since last heartbeat; reported with each heartbeat. */
+    public static volatile java.util.function.LongSupplier p2pDirectBytesSupplier = () -> 0L;
+
     public Heartbeat heartbeat(String lease, long epoch) throws IOException, GatewayException {
         JsonObject body = epoch(epoch);
         var p = syncProgress;
@@ -616,6 +619,10 @@ public final class GatewayClient {
         double tps = tpsSupplier.getAsDouble();
         if (tps >= 0) {
             body.addProperty("tps", Math.round(tps * 100.0) / 100.0);
+        }
+        long p2p = p2pDirectBytesSupplier != null ? p2pDirectBytesSupplier.getAsLong() : 0L;
+        if (p2p > 0) {
+            body.addProperty("p2p_direct_bytes", p2p);
         }
         JsonObject r = post(leasePath(lease) + "/heartbeat", body);
         List<String> targets = new ArrayList<>();

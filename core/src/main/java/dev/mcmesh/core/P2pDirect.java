@@ -45,6 +45,22 @@ public final class P2pDirect {
         return activeRoutes.getOrDefault(peerId, new Route(peerId, RouteMode.GATEWAY_RELAY, null, -1));
     }
 
+    private final java.util.concurrent.atomic.AtomicLong directBytes = new java.util.concurrent.atomic.AtomicLong();
+
+    public void recordDirectBytes(long bytes) {
+        if (bytes > 0) {
+            directBytes.addAndGet(bytes);
+        }
+    }
+
+    public long totalDirectBytes() {
+        return directBytes.get();
+    }
+
+    public long getAndResetDirectBytes() {
+        return directBytes.getAndSet(0);
+    }
+
     public boolean isDirect(String peerId) {
         Route r = activeRoutes.get(peerId);
         return r != null && (r.mode() == RouteMode.DIRECT_P2P || r.mode() == RouteMode.LAN_LOCAL);
