@@ -737,6 +737,13 @@ public final class GatewayClient {
         }
     }
 
+    public synchronized void closeBlobStream() {
+        if (blobStream != null) {
+            blobStream.close();
+            blobStream = null;
+        }
+    }
+
     public byte[] blobGet(byte[] hash) throws IOException, GatewayException {
         BlobStream s = acquireBlobStream();
         if (s != null) {

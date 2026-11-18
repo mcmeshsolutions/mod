@@ -121,4 +121,30 @@ class BlobStreamTest {
             }
         }
     }
+
+    @Test
+    void closingBlobStreamImmediatelyFailsAllPendingFutures() throws Exception {
+        try (ServerSocket server = new ServerSocket(0)) {
+            Thread peer = new Thread(() -> {
+                try (Socket s = server.accept()) {
+                    DataInputStream in = new DataInputStream(new BufferedInputStream(s.getInputStream()));
+                    OutputStream out = s.getOutputStream();
+                    Tunnel.read(in);
+                    Tunnel.write(out, BlobStream.HELLO_OK, 0, new byte[0], 0, 0);
+                    // keep connection open without answering WANTs
+                    Thread.sleep(5_000);
+                } catch (Exception ignored) { }
+            });
+            peer.setDaemon(true);
+            peer.start();
+
+            try (BlobStream bs = BlobStream.connect(new InetSocketAddress("127.0.0.1", server.getLocalPort()), "tok-123")) {
+                var f1 = bs.fetchAsync(new byte[32]);
+                var f2 = bs.fetchAsync(new byte[32]);
+                bs.close();
+                assertThrows(java.util.concurrent.ExecutionException.class, f1::get);
+                assertThrows(java.util.concurrent.ExecutionException.class, f2::get);
+            }
+        }
+    }
 }

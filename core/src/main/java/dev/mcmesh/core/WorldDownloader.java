@@ -10,6 +10,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 
 /** Pulls every blob of a revision and verifies its hash before handing it to the sink. */
@@ -142,18 +143,16 @@ public final class WorldDownloader {
                 fallback.add(it);
             } else {
                 pipelined.add(it);
-                // orTimeout's clock starts now, at creation - not whenever this loop below happens to
-                // reach this future. Without it, a dead stream with thousands of items still pending
-                // turns into a sequential pile-up: item 0 blocks the full 30s, then item 1 blocks another
-                // 30s, and so on, instead of every item's timeout running concurrently and this whole
-                // step costing about 30s total. Confirmed live: looked like it never recovers at all.
-                futures.add(f.orTimeout(30, TimeUnit.SECONDS));
+                futures.add(f);
             }
         }
         for (int i = 0; i < pipelined.size(); i++) {
             Item it = pipelined.get(i);
             try {
-                byte[] d = futures.get(i).get();
+                // Idle timeout: waiting up to 30s for the next chunk to arrive. As long as chunks keep
+                // streaming in, each get() returns quickly and large transfers can take as long as needed
+                // at full link speed without being aborted by an arbitrary absolute deadline.
+                byte[] d = futures.get(i).get(30, TimeUnit.SECONDS);
                 if (!Arrays.equals(Bytes.sha256(d), it.hash())) {
                     throw new IOException("blob " + Bytes.hex(it.hash()) + " failed hash check");
                 }
@@ -162,6 +161,12 @@ public final class WorldDownloader {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IOException("interrupted", e);
+            } catch (TimeoutException e) {
+                // If a chunk genuinely stalls for 30s with zero data, close the stream immediately.
+                // failAll() exceptionally completes all remaining futures at once, preventing any
+                // sequential 30s pile-up across the rest of the batch.
+                gw.closeBlobStream();
+                fallback.add(it);
             } catch (ExecutionException e) {
                 if (e.getCause() instanceof GatewayException g) {
                     throw g;

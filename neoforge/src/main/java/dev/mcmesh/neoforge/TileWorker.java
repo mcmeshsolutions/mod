@@ -215,15 +215,15 @@ final class TileWorker {
                 fallback.add(b);
             } else {
                 pipelined.add(b);
-                // clock starts now, at creation, so a dead stream with many items still pending times
-                // all of them out concurrently in ~30s total instead of 30s each, one at a time, in the
-                // loop below - see WorldDownloader.fetchAll for the same fix and why it matters.
-                futures.add(f.orTimeout(30, java.util.concurrent.TimeUnit.SECONDS));
+                futures.add(f);
             }
         }
         for (int i = 0; i < pipelined.size(); i++) {
             try {
-                futures.get(i).get();
+                futures.get(i).get(30, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException e) {
+                gw.closeBlobStream();
+                fallback.add(pipelined.get(i));
             } catch (java.util.concurrent.ExecutionException e) {
                 if (e.getCause() instanceof dev.mcmesh.core.GatewayException g) {
                     throw g;
