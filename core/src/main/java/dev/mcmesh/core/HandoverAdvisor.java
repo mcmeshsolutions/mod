@@ -25,7 +25,12 @@ public final class HandoverAdvisor {
 
     /** The worst of battery, uplink and lid wins. */
     public static Decision decide(Battery b, double uploadMbps, SleepProbe.Lid lid) {
-        Decision battery = batteryVerdict(b);
+        return decide(b, uploadMbps, lid, NOW_AT_OR_BELOW);
+    }
+
+    /** Overload supporting configurable battery handover threshold. */
+    public static Decision decide(Battery b, double uploadMbps, SleepProbe.Lid lid, int nowAtOrBelow) {
+        Decision battery = batteryVerdict(b, nowAtOrBelow);
         Decision link = uploadMbps < 0 ? Decision.STAY : uploadMbps < UNUSABLE_UPLINK_MBPS ? Decision.HAND_OVER_NOW : uploadMbps < POOR_UPLINK_MBPS ? Decision.PREFER_HANDOVER : Decision.STAY;
         Decision worst = battery.ordinal() >= link.ordinal() ? battery : link;
         Decision sleep = sleepVerdict(b, lid);
@@ -44,12 +49,18 @@ public final class HandoverAdvisor {
     }
 
     private static Decision batteryVerdict(Battery b) {
+        return batteryVerdict(b, NOW_AT_OR_BELOW);
+    }
+
+    private static Decision batteryVerdict(Battery b, int nowAtOrBelow) {
         if (b == null || !b.discharging() || b.percent() < 0 || b.percent() > 100) {
             return Decision.STAY;
         }
-        if (b.percent() <= NOW_AT_OR_BELOW) {
+        int critical = Math.max(1, nowAtOrBelow);
+        int prefer = Math.min(100, critical == NOW_AT_OR_BELOW ? PREFER_AT_OR_BELOW : critical + 5);
+        if (b.percent() <= critical) {
             return Decision.HAND_OVER_NOW;
         }
-        return b.percent() <= PREFER_AT_OR_BELOW ? Decision.PREFER_HANDOVER : Decision.STAY;
+        return b.percent() <= prefer ? Decision.PREFER_HANDOVER : Decision.STAY;
     }
 }

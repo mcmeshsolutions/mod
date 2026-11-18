@@ -102,6 +102,9 @@ public final class MeshEvents {
 
     @SubscribeEvent
     public static void pregenSwarmTick(ServerTickEvent.Post e) {
+        if (LoadShed.isFpsThrottled()) {
+            return;
+        }
         if (e.getServer().getTickCount() % 10 == 0) {
             double mspt = e.getServer().getAverageTickTimeNanos() / 1_000_000.0;
             double tps = mspt <= 50.0 ? 20.0 : 1000.0 / mspt;
@@ -272,8 +275,11 @@ public final class MeshEvents {
 
     @SubscribeEvent
     public static void banOnLogin(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent e) {
-        if (MeshService.current() != null && e.getEntity() instanceof net.minecraft.server.level.ServerPlayer p) {
-            BanSync.kickIfBanned(p);
+        if (e.getEntity() instanceof net.minecraft.server.level.ServerPlayer p) {
+            if (MeshService.current() != null) {
+                BanSync.kickIfBanned(p);
+            }
+            enforceGuestViewDistance(p);
         }
     }
 
@@ -328,6 +334,20 @@ public final class MeshEvents {
         });
     }
 
+    public static void enforceGuestViewDistance(net.minecraft.server.level.ServerPlayer p) {
+        if (p.connection != null && p.connection.getConnection() != null && !p.connection.getConnection().isMemoryConnection()) {
+            int maxCap = MeshConfig.MAX_GUEST_VIEW_DISTANCE.get();
+            if (p.requestedViewDistance() > maxCap) {
+                var info = p.clientInformation();
+                p.updateOptions(new net.minecraft.server.level.ClientInformation(
+                        info.language(), maxCap, info.chatVisibility(), info.chatColors(),
+                        info.modelCustomisation(), info.mainHand(), info.textFilteringEnabled(), info.allowsListing()
+                ));
+                p.connection.send(new net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket(maxCap));
+            }
+        }
+    }
+
     @SubscribeEvent
     public static void loadShedding(ServerTickEvent.Post e) {
         if (e.getServer().getTickCount() % 20 != 0) {
@@ -335,6 +355,9 @@ public final class MeshEvents {
         }
         MeshService hosting = MeshService.current();
         if (hosting != null) {
+            for (var p : e.getServer().getPlayerList().getPlayers()) {
+                enforceGuestViewDistance(p);
+            }
             LoadShed.countPlayers(e.getServer());
             LoadShed.sample(e.getServer());
             if (e.getServer().getTickCount() % 600 == 0) {

@@ -23,6 +23,7 @@ public final class ClientHooks {
     @SubscribeEvent
     public static void init(ScreenEvent.Init.Post e) {
         WorkerPool.ensureStarted();
+        dev.mcmesh.neoforge.HostStatus.setFpsSupplier(() -> Minecraft.getInstance().getFps());
         // the config is only guaranteed loaded by the time a screen opens; a static initializer ran before that and
         // threw IllegalStateException on every single launch, so the check never actually happened
         PackUpdate.start();

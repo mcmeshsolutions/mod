@@ -45,6 +45,10 @@ public final class MeshConfig {
     public static final ModConfigSpec.BooleanValue PACK_AUTO_UPDATE;
     public static final ModConfigSpec.ConfigValue<String> MODPACK_URL;
     public static final ModConfigSpec.ConfigValue<String> MODPACK_INSTANCE;
+    public static final ModConfigSpec.IntValue MAX_GUEST_VIEW_DISTANCE;
+    public static final ModConfigSpec.IntValue BATTERY_DRAIN_HANDOVER_PERCENT;
+    public static final ModConfigSpec.BooleanValue FPS_DEFENSE_ENABLED;
+    public static final ModConfigSpec.IntValue FPS_DEFENSE_MIN;
     public static final ModConfigSpec.ConfigValue<java.util.List<? extends String>> GATEWAYS;
 
     static {
@@ -103,6 +107,10 @@ public final class MeshConfig {
         DISCORD_APP = b.comment("Discord application id for rich presence; empty disables it").define("discordAppId", "");
         MODPACK_URL = b.comment("direct link to a Prism instance export (.zip); empty hides the modpack updater").define("modpackUrl", "");
         MODPACK_INSTANCE = b.comment("folder name of the Prism instance the modpack is installed into; must differ from the running instance").define("modpackInstance", "Mesh Modpack");
+        MAX_GUEST_VIEW_DISTANCE = b.comment("Host only: maximum view distance served to remote guests (chunks), protecting host CPU and RAM while allowing the host to run at their preferred view distance").defineInRange("maxGuestViewDistance", 8, 4, 32);
+        BATTERY_DRAIN_HANDOVER_PERCENT = b.comment("Battery percentage threshold below which an automated handover to a connected guest or anchor is initiated when running on battery").defineInRange("batteryHandoverPercent", 20, 5, 50);
+        FPS_DEFENSE_ENABLED = b.comment("Automatically shed guest simulation load and throttle background generation if host FPS drops below minHostFps").define("fpsDefenseEnabled", true);
+        FPS_DEFENSE_MIN = b.comment("Minimum host FPS target; shedding kicks in when host FPS stays below this value").defineInRange("minHostFps", 30, 15, 60);
         GATEWAYS = b.comment("Extra join-only gateways as \"id=https://api.url\"; hosting always uses apiUrl above")
                 .defineListAllowEmpty("gateways", java.util.List.of(), () -> "", o -> o instanceof String);
         SPEC = b.build();

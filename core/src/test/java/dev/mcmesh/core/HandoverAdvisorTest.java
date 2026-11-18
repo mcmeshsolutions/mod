@@ -81,4 +81,12 @@ class HandoverAdvisorTest {
         assertEquals(PREFER_HANDOVER, HandoverAdvisor.decide(new Battery(15, true), 1.0));
         assertEquals(STAY, HandoverAdvisor.decide(new Battery(80, true), 30));
     }
+
+    @Test
+    void customBatteryThresholds() {
+        assertEquals(STAY, HandoverAdvisor.decide(new Battery(25, true), 10, SleepProbe.Lid.OPEN, 15));
+        assertEquals(PREFER_HANDOVER, HandoverAdvisor.decide(new Battery(18, true), 10, SleepProbe.Lid.OPEN, 15));
+        assertEquals(HAND_OVER_NOW, HandoverAdvisor.decide(new Battery(15, true), 10, SleepProbe.Lid.OPEN, 15));
+        assertEquals(HAND_OVER_NOW, HandoverAdvisor.decide(new Battery(10, true), 10, SleepProbe.Lid.OPEN, 15));
+    }
 }

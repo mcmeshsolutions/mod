@@ -88,7 +88,8 @@ final class HandoverWatch {
         }
         var battery = BatteryProbe.read();
         var lid = dev.mcmesh.core.SleepProbe.read();
-        var decision = HandoverAdvisor.decide(battery, uploadMbps, lid);
+        int batteryThreshold = MeshConfig.BATTERY_DRAIN_HANDOVER_PERCENT.get();
+        var decision = HandoverAdvisor.decide(battery, uploadMbps, lid, batteryThreshold);
         // a closing lid suspends the machine within seconds, so there is no time for a second opinion 30 s later
         boolean sleepImminent = lid == dev.mcmesh.core.SleepProbe.Lid.CLOSED && battery != null && battery.discharging();
         criticalStreak = decision == HandoverAdvisor.Decision.HAND_OVER_NOW ? criticalStreak + 1 : 0;

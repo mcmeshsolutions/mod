@@ -7,8 +7,18 @@ import java.util.function.BooleanSupplier;
 public final class HostStatus {
     private static volatile String guestWorld;
     private static volatile BooleanSupplier takeoverRequester;
+    private static volatile java.util.function.IntSupplier fpsSupplier;
 
     private HostStatus() { }
+
+    public static void setFpsSupplier(java.util.function.IntSupplier supplier) {
+        fpsSupplier = supplier;
+    }
+
+    public static int fps() {
+        var s = fpsSupplier;
+        return s != null ? s.getAsInt() : -1;
+    }
 
     public static HostHealth snapshot() {
         return new HostHealth(LoadShed.reportedLevel(), LoadShed.reportedPlayers(), LoadShed.reportedTps());

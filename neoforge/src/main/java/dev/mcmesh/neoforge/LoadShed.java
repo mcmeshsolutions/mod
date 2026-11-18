@@ -12,11 +12,13 @@ final class LoadShed {
     private static final int MIN_VIEW = 6;
     private static final int MIN_SIMULATION = 5;
     private static final LoadShedder SHEDDER = new LoadShedder();
+    private static final dev.mcmesh.core.FpsDefense FPS_DEFENSE = new dev.mcmesh.core.FpsDefense();
     private static final TickDegradation DEGRADE = new TickDegradation();
     /** Read by the heartbeat thread: the shed level (-1 unknown) and the real players online (-1 unknown). */
     private static volatile int reportedLevel = -1;
     private static volatile int reportedPlayers = -1;
     private static volatile double reportedTps = 20.0;
+    private static volatile boolean fpsThrottled;
     private static int baseView = -1;
     private static int baseSimulation = -1;
 
@@ -38,6 +40,10 @@ final class LoadShed {
         return reportedTps;
     }
 
+    static boolean isFpsThrottled() {
+        return fpsThrottled;
+    }
+
     /** Fake players (bots, automation) are not people and must not make a host look busy. */
     static void countPlayers(MinecraftServer server) {
         reportedPlayers = (int) server.getPlayerList().getPlayers().stream().filter(p -> !(p instanceof net.neoforged.neoforge.common.util.FakePlayer)).count();
@@ -52,8 +58,17 @@ final class LoadShed {
             reportedLevel = -1;
             return;
         }
-        int before = SHEDDER.level();
-        int level = SHEDDER.update(tps, System.currentTimeMillis());
+        int before = reportedLevel < 0 ? 0 : reportedLevel;
+        int tpsLevel = SHEDDER.update(tps, System.currentTimeMillis());
+        int fpsLevel = 0;
+        if (MeshConfig.FPS_DEFENSE_ENABLED.get() && !server.isDedicatedServer()) {
+            int fps = HostStatus.fps();
+            if (fps >= 0) {
+                fpsLevel = FPS_DEFENSE.update(fps, MeshConfig.FPS_DEFENSE_MIN.get(), System.currentTimeMillis());
+            }
+        }
+        fpsThrottled = fpsLevel > 0;
+        int level = Math.max(tpsLevel, fpsLevel);
         reportedLevel = level;
         if (level == before) {
             return;
@@ -63,7 +78,8 @@ final class LoadShed {
             baseSimulation = server.getPlayerList().getSimulationDistance();
         }
         apply(server, level);
-        LOG.warn("host load level {} -> {} at {} TPS: view distance {}, simulation distance {}", before, level, Math.round(tps * 10) / 10.0,
+        LOG.warn("host load level {} -> {} (TPS: {}, host FPS: {}): view distance {}, simulation distance {}",
+                before, level, Math.round(tps * 10) / 10.0, HostStatus.fps(),
                 server.getPlayerList().getViewDistance(), server.getPlayerList().getSimulationDistance());
         if (level == 0) {
             baseView = -1;
@@ -92,7 +108,9 @@ final class LoadShed {
         baseView = -1;
         baseSimulation = -1;
         SHEDDER.reset();
+        FPS_DEFENSE.reset();
         DEGRADE.reset();
+        fpsThrottled = false;
         reportedLevel = -1;
         reportedPlayers = -1;
     }
