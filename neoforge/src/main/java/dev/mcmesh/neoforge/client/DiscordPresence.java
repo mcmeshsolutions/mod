@@ -59,8 +59,10 @@ public final class DiscordPresence {
                     chan = connect(app);
                 }
                 JsonObject act = new JsonObject();
-                act.addProperty("details", role);
-                act.addProperty("state", "Create Full Stack");
+                String envPack = System.getenv("MCMESH_PACK_NAME");
+                String packName = (envPack != null && !envPack.isBlank()) ? envPack
+                        : ("default".equals(MeshConfig.PACK_ID.get()) ? "mcmesh" : MeshConfig.PACK_ID.get());
+                act.addProperty("state", packName);
                 JsonObject ts = new JsonObject();
                 ts.addProperty("start", since);
                 act.add("timestamps", ts);

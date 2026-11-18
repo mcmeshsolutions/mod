@@ -21,8 +21,8 @@ import java.util.List;
  */
 public final class PackPreLaunch {
     static final String DEFAULT_PACK_ID = "default";
-    static final String DEFAULT_AUTHOR_KEY = "GaIjyKsDGyhXjC5QNC7Hbcgx49W6mCYjaMtkJ49i9qA";
-    static final String DEFAULT_UPDATE_URL = "https://play.23012006.xyz/dl/pack-manifest.json";
+    static final String DEFAULT_AUTHOR_KEY = "";
+    static final String DEFAULT_UPDATE_URL = "";
 
     /** Bump this (and have PackBuilder's updaterVersion match) whenever mcmesh-updater.jar itself changes. */
     static final int SELF_VERSION = 4;
@@ -125,6 +125,9 @@ public final class PackPreLaunch {
     }
 
     static void run(Path gameDir, String packId, String authorKey, String updateUrl) {
+        if (updateUrl == null || updateUrl.isBlank() || authorKey == null || authorKey.isBlank()) {
+            return;
+        }
         String have = PackSwap.appliedVersion(gameDir);
         var settings = new PackUpdater.Settings(packId, have == null ? "0" : have, authorKey, updateUrl, true, gameDir, SELF_VERSION);
         PackUpdater.Outcome out;
