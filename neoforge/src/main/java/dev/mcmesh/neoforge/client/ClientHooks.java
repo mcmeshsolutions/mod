@@ -47,6 +47,13 @@ public final class ClientHooks {
                     .bounds(4, 52, 90, 20).build());
             return;
         }
+        if (e.getScreen() instanceof net.minecraft.client.gui.screens.PauseScreen p) {
+            if (dev.mcmesh.neoforge.MeshService.current() != null || dev.mcmesh.neoforge.MeshBoot.held() != null) {
+                e.addListener(Button.builder(Component.literal("Hand Over & Leave"), b -> HostExit.handOverAndLeave(p))
+                        .bounds(p.width / 2 - 102, p.height / 4 + 144, 204, 20).build());
+            }
+            return;
+        }
         if (!(e.getScreen() instanceof SelectWorldScreen s)) {
             return;
         }
@@ -177,6 +184,7 @@ public final class ClientHooks {
             HostFlow.guestAliveAt = System.currentTimeMillis();
             Standby.endReconnectEpisode();
         }
+        HostHealthHud.renderPeaceOfMindWidget(e.getGuiGraphics());
         if (dev.mcmesh.neoforge.MeshConfig.HUD_ALWAYS_VISIBLE.get()) {
             drawStatusInfo(e.getGuiGraphics());
         }

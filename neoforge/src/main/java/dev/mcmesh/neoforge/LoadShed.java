@@ -16,6 +16,7 @@ final class LoadShed {
     /** Read by the heartbeat thread: the shed level (-1 unknown) and the real players online (-1 unknown). */
     private static volatile int reportedLevel = -1;
     private static volatile int reportedPlayers = -1;
+    private static volatile double reportedTps = 20.0;
     private static int baseView = -1;
     private static int baseSimulation = -1;
 
@@ -33,6 +34,10 @@ final class LoadShed {
         return reportedPlayers;
     }
 
+    static double reportedTps() {
+        return reportedTps;
+    }
+
     /** Fake players (bots, automation) are not people and must not make a host look busy. */
     static void countPlayers(MinecraftServer server) {
         reportedPlayers = (int) server.getPlayerList().getPlayers().stream().filter(p -> !(p instanceof net.neoforged.neoforge.common.util.FakePlayer)).count();
@@ -41,11 +46,12 @@ final class LoadShed {
     static synchronized void sample(MinecraftServer server) {
         double tickMs = server.getAverageTickTimeNanos() / 1_000_000.0;
         profileIfDegraded(server, tickMs);
+        double tps = tickMs <= 50 ? 20.0 : 1000.0 / tickMs;
+        reportedTps = tps;
         if (!enabled()) {
             reportedLevel = -1;
             return;
         }
-        double tps = tickMs <= 50 ? 20.0 : 1000.0 / tickMs;
         int before = SHEDDER.level();
         int level = SHEDDER.update(tps, System.currentTimeMillis());
         reportedLevel = level;

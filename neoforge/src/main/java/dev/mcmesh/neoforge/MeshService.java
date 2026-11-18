@@ -59,6 +59,7 @@ public final class MeshService {
         GatewayClient.hwScore = HostBench::bidScore;
         GatewayClient.playerCount = LoadShed::reportedPlayers;
         GatewayClient.loadLevel = LoadShed::reportedLevel;
+        GatewayClient.tpsSupplier = LoadShed::reportedTps;
     }
 
     private final AuxSync aux = new AuxSync();

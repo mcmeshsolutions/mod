@@ -27,6 +27,8 @@ class HostHealthTest {
         assertEquals("Host under load (3 players)", new HostHealth(1, 3).label());
         assertEquals("Host running smoothly", new HostHealth(0, -1).label());
         assertEquals("Host overloaded, a stronger machine may take over (0 players)", new HostHealth(2, 0).label());
+        assertEquals("Host 20.0 TPS, running smoothly (2 players)", new HostHealth(0, 2, 20.0).label());
+        assertEquals(HostHealth.Status.OVERLOADED, new HostHealth(0, 2, 12.0).status(), "low TPS flags overloaded even if load shed level is 0");
     }
 
     @Test

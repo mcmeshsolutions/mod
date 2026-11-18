@@ -11,7 +11,11 @@ public final class HostStatus {
     private HostStatus() { }
 
     public static HostHealth snapshot() {
-        return new HostHealth(LoadShed.reportedLevel(), LoadShed.reportedPlayers());
+        return new HostHealth(LoadShed.reportedLevel(), LoadShed.reportedPlayers(), LoadShed.reportedTps());
+    }
+
+    public static double tps() {
+        return LoadShed.reportedTps();
     }
 
     /** Last measured uplink in Mbit/s, or -1. */

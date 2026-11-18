@@ -22,6 +22,19 @@ public final class HostExit {
 
     private HostExit() {}
 
+    /** Explicit handover from pause menu button ensuring 0-disconnect host departure. */
+    public static void handOverAndLeave(net.minecraft.client.gui.screens.Screen parent) {
+        Minecraft mc = Minecraft.getInstance();
+        MinecraftServer server = mc.getSingleplayerServer();
+        if (server != null && server.getPlayerCount() >= 2) {
+            intercept();
+        } else {
+            mc.level.disconnect();
+            mc.disconnect(new GenericMessageScreen(Component.translatable("menu.savingLevel")));
+            mc.setScreen(new TitleScreen());
+        }
+    }
+
     /** True when the quit was held back for the countdown. */
     public static boolean intercept() {
         Minecraft mc = Minecraft.getInstance();

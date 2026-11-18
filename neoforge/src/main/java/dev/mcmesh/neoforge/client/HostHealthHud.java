@@ -47,6 +47,61 @@ final class HostHealthHud {
         return new Line(text, color);
     }
 
+    /** Renders the Host Peace-of-Mind HUD corner widget with background badge, active TPS, guest health, and failover status. */
+    static void renderPeaceOfMindWidget(net.minecraft.client.gui.GuiGraphics g) {
+        if (!MeshConfig.SHOW_HOST_HEALTH.get()) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.options.hideGui) {
+            return;
+        }
+        MeshService hosting = MeshService.current();
+        HostHealth h = hosting != null ? dev.mcmesh.neoforge.HostStatus.snapshot() : joinedWorldHealth(mc);
+        if (h == null || !h.known()) {
+            return;
+        }
+        var f = mc.font;
+        int statusColor = switch (h.status()) {
+            case SMOOTH -> 0xFF55FF55;
+            case STRAINED -> 0xFFFFFF55;
+            case OVERLOADED -> 0xFFFF5555;
+        };
+
+        String l1;
+        String l2;
+        if (hosting != null) {
+            double tps = h.tps() >= 0 ? h.tps() : dev.mcmesh.neoforge.HostStatus.tps();
+            String healthWord = switch (h.status()) {
+                case SMOOTH -> "Optimal";
+                case STRAINED -> "Strained";
+                case OVERLOADED -> "Overloaded";
+            };
+            l1 = String.format("Hosting: %.1f TPS (%s)", tps, healthWord);
+            int guests = Math.max(0, h.players() - 1);
+            double up = dev.mcmesh.neoforge.HostStatus.uploadMbps();
+            String upPart = up >= 0 ? String.format(" · %.0f Mb/s", up) : "";
+            l2 = String.format("Guests: %d online%s", guests, upPart);
+        } else {
+            String host = HostFlow.guestOf != null ? HostFlow.guestOf : "Mesh Host";
+            double tps = h.tps() >= 0 ? h.tps() : 20.0;
+            l1 = String.format("Host (%s): %.1f TPS", host, tps);
+            l2 = String.format("World players: %d", Math.max(1, h.players()));
+        }
+
+        int maxW = Math.max(f.width(l1), f.width(l2));
+        int x = g.guiWidth() - maxW - 8;
+        int y = 6;
+
+        // Background card
+        g.fill(x - 4, y - 3, x + maxW + 4, y + 23, 0x90101010);
+        // Status indicator dot / left accent line
+        g.fill(x - 4, y - 3, x - 2, y + 23, statusColor);
+
+        g.drawString(f, l1, x, y, statusColor, true);
+        g.drawString(f, l2, x, y + 11, 0xFFCCCCCC, true);
+    }
+
     record Line(String text, int color) { }
 
     /** The world id when the current connection is the relay of a mesh world this client joined, else null. */
