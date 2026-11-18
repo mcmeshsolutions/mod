@@ -213,6 +213,30 @@ public final class GatewayClient {
         exec("/v1/worlds/" + world + "/aux/settings/motd", "PUT", HttpRequest.BodyPublishers.ofString(MotdFormat.translate(text)), "application/octet-stream");
     }
 
+    public record SkinInfo(String playerUuid, String skinHash, String skinUrl, long updatedAt) {}
+
+    public String uploadSkin(byte[] pngBytes) throws IOException, GatewayException {
+        byte[] r = exec("/v1/skins", "POST", HttpRequest.BodyPublishers.ofByteArray(pngBytes), "image/png");
+        return JsonParser.parseString(new String(r)).getAsJsonObject().get("hash").getAsString();
+    }
+
+    public SkinInfo userSkin(String uuid) throws IOException, GatewayException {
+        try {
+            byte[] r = exec("/v1/users/" + uuid + "/skin", "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
+            JsonObject o = JsonParser.parseString(new String(r)).getAsJsonObject();
+            return new SkinInfo(o.get("player_uuid").getAsString(), o.get("skin_hash").getAsString(), o.get("skin_url").getAsString(), o.get("updated_at").getAsLong());
+        } catch (GatewayException e) {
+            if (e.status == 404 || e.code.equals("NO_SUCH_SKIN")) {
+                return null;
+            }
+            throw e;
+        }
+    }
+
+    public byte[] getSkin(String hash) throws IOException, GatewayException {
+        return exec("/v1/skins/" + hash, "GET", HttpRequest.BodyPublishers.noBody(), "application/octet-stream");
+    }
+
     public record RevisionInfo(String id, long seq, String kind, long at, String by, int chunks, int files) {}
     public record RevisionsResult(String head, List<RevisionInfo> revisions) {}
     public record RollbackResult(String revision, int restored, int removed) {}

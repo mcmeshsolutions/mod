@@ -8,7 +8,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,8 +23,8 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import org.slf4j.Logger;
 
 /**
- * The hosted server runs offline, so it knows no skins. Looks the player's name up at Mojang and
- * attaches the textures property, so everyone sees real skins. Same idea as SkinsRestorer.
+ * Handles skin resolution for hosted mesh servers. Resolves custom skins via gateway /v1/skins/:hash,
+ * direct skin URLs or hashes, and falls back to Mojang session server lookups for offline-mode players.
  */
 @EventBusSubscriber(modid = "mcmesh")
 public final class SkinFix {
@@ -30,7 +32,7 @@ public final class SkinFix {
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
     private static final Map<String, Property> CACHE = new ConcurrentHashMap<>();
     private static final Property NONE = new Property("textures", "");
-    /** Maps a player to the Mojang account whose skin they chose with /meshskin. */
+    /** Maps a player to the custom identifier (Mojang name, skin hash, or URL) chosen with /meshskin. */
     static final Map<String, String> CHOSEN = new ConcurrentHashMap<>();
 
     private SkinFix() { }
@@ -44,9 +46,9 @@ public final class SkinFix {
         apply(p, CHOSEN.getOrDefault(p.getGameProfile().getName().toLowerCase(), p.getGameProfile().getName()));
     }
 
-    static void apply(ServerPlayer p, String mojangName) {
+    public static void apply(ServerPlayer p, String identifier) {
         Thread.ofVirtual().start(() -> {
-            Property tex = lookup(mojangName);
+            Property tex = resolve(p.getUUID().toString(), p.getGameProfile().getName(), identifier);
             if (tex == NONE) {
                 return;
             }
@@ -61,18 +63,85 @@ public final class SkinFix {
         });
     }
 
-    private static Property lookup(String name) {
-        String key = name.toLowerCase();
-        Property c = CACHE.get(key);
-        if (c != null) {
-            return c;
+    private static Property resolve(String uuid, String name, String identifier) {
+        String key = (uuid + ":" + identifier).toLowerCase();
+        Property cached = CACHE.get(key);
+        if (cached != null) {
+            return cached;
         }
+
+        String apiUrl = MeshConfig.API_URL.get();
+        if (apiUrl != null && apiUrl.endsWith("/")) {
+            apiUrl = apiUrl.substring(0, apiUrl.length() - 1);
+        }
+
+        // 1. Direct URL
+        if (identifier.startsWith("http://") || identifier.startsWith("https://")) {
+            Property p = createSkinProperty(identifier, uuid, name);
+            CACHE.put(key, p);
+            return p;
+        }
+
+        // 2. Direct 64-char hex hash
+        if (identifier.length() == 64 && isHex(identifier) && apiUrl != null && !apiUrl.isBlank()) {
+            Property p = createSkinProperty(apiUrl + "/v1/skins/" + identifier, uuid, name);
+            CACHE.put(key, p);
+            return p;
+        }
+
+        // 3. Check Gateway for custom skin registered to this player's UUID
+        if (apiUrl != null && !apiUrl.isBlank()) {
+            try {
+                JsonObject skinRes = get(apiUrl + "/v1/users/" + uuid + "/skin");
+                if (skinRes != null && skinRes.has("skin_url")) {
+                    String skinUrl = apiUrl + skinRes.get("skin_url").getAsString();
+                    Property p = createSkinProperty(skinUrl, uuid, name);
+                    CACHE.put(key, p);
+                    return p;
+                }
+            } catch (Exception ex) {
+                LOG.debug("gateway skin check for {} failed: {}", uuid, ex.toString());
+            }
+        }
+
+        // 4. Fallback to Mojang session server by username
+        Property p = lookupMojang(identifier);
+        CACHE.put(key, p);
+        return p;
+    }
+
+    private static boolean isHex(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static Property createSkinProperty(String skinUrl, String uuid, String name) {
+        JsonObject root = new JsonObject();
+        root.addProperty("timestamp", System.currentTimeMillis());
+        root.addProperty("profileId", uuid.replace("-", ""));
+        root.addProperty("profileName", name);
+        JsonObject textures = new JsonObject();
+        JsonObject skin = new JsonObject();
+        skin.addProperty("url", skinUrl);
+        textures.add("SKIN", skin);
+        root.add("textures", textures);
+        String json = root.toString();
+        String b64 = Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+        return new Property("textures", b64);
+    }
+
+    private static Property lookupMojang(String name) {
         Property found = NONE;
         try {
-            JsonObject id = get("https://api.mojang.com/users/profiles/minecraft/" + java.net.URLEncoder.encode(name, "UTF-8"));
+            JsonObject id = get("https://api.mojang.com/users/profiles/minecraft/" + java.net.URLEncoder.encode(name, StandardCharsets.UTF_8));
             if (id != null && id.has("id")) {
                 JsonObject prof = get("https://sessionserver.mojang.com/session/minecraft/profile/" + id.get("id").getAsString() + "?unsigned=false");
-                if (prof != null) {
+                if (prof != null && prof.has("properties")) {
                     for (var el : prof.getAsJsonArray("properties")) {
                         JsonObject o = el.getAsJsonObject();
                         if ("textures".equals(o.get("name").getAsString())) {
@@ -86,7 +155,6 @@ public final class SkinFix {
             LOG.debug("skin lookup for {} failed: {}", name, ex.toString());
             return NONE;
         }
-        CACHE.put(key, found);
         return found;
     }
 

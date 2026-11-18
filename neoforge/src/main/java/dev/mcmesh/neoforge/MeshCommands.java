@@ -398,6 +398,22 @@ public final class MeshCommands {
                                     return 1;
                                 }))));
         d.register(Commands.literal("meshskin")
+                .then(Commands.literal("clear").executes(c -> {
+                    var p = c.getSource().getPlayerOrException();
+                    SkinFix.CHOSEN.remove(p.getGameProfile().getName().toLowerCase());
+                    SkinFix.apply(p, p.getGameProfile().getName());
+                    c.getSource().sendSuccess(() -> Component.literal("Skin reset to default"), false);
+                    return 1;
+                }))
+                .then(Commands.literal("set")
+                        .then(Commands.argument("target", StringArgumentType.greedyString()).executes(c -> {
+                            var p = c.getSource().getPlayerOrException();
+                            String target = StringArgumentType.getString(c, "target").trim();
+                            SkinFix.CHOSEN.put(p.getGameProfile().getName().toLowerCase(), target);
+                            SkinFix.apply(p, target);
+                            c.getSource().sendSuccess(() -> Component.literal("Skin updated to: " + target), false);
+                            return 1;
+                        })))
                 .then(Commands.argument("mojangName", StringArgumentType.word()).executes(c -> {
                     var p = c.getSource().getPlayerOrException();
                     String n = StringArgumentType.getString(c, "mojangName");
