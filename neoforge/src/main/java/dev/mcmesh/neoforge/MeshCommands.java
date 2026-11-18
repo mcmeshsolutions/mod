@@ -19,6 +19,7 @@ public final class MeshCommands {
     public static final dev.mcmesh.core.P2pDirect P2P_DIRECT = new dev.mcmesh.core.P2pDirect();
     public static final dev.mcmesh.core.CasSwarm CAS_SWARM = new dev.mcmesh.core.CasSwarm();
     public static final dev.mcmesh.core.SinceLens SINCE_LENS = new dev.mcmesh.core.SinceLens();
+    public static final dev.mcmesh.core.LanDiscovery.Listener LAN_LISTENER = new dev.mcmesh.core.LanDiscovery.Listener();
 
     private MeshCommands() { }
 
@@ -421,6 +422,9 @@ public final class MeshCommands {
                 }));
         d.register(Commands.literal("meshdoctor")
                 .executes(c -> runDoctor(c.getSource())));
+        d.register(Commands.literal("meshlan")
+                .then(Commands.literal("status").executes(c -> showLanStatus(c.getSource())))
+                .executes(c -> showLanStatus(c.getSource())));
         d.register(Commands.literal("meshpregen")
                 .requires(MeshCommands::canEdit)
                 .then(Commands.literal("status").executes(c -> {
@@ -849,6 +853,25 @@ public final class MeshCommands {
                 src.sendSuccess(() -> Component.literal("\u00a76[MCMesh Doctor]\u00a7r Verdict: \u00a7cISSUES DETECTED\u00a7r (see suggestions above)"), false);
             }
         });
+        return 1;
+    }
+
+    private static int showLanStatus(CommandSourceStack src) {
+        if (!LAN_LISTENER.isRunning()) {
+            LAN_LISTENER.start();
+        }
+        var worlds = LAN_LISTENER.getDiscovered();
+        src.sendSuccess(() -> Component.literal("\u00a7b[MCMesh LAN Discovery]\u00a7r Active on 224.0.2.60:4445"), false);
+        if (worlds.isEmpty()) {
+            src.sendSuccess(() -> Component.literal("  No other MCMesh worlds discovered on local Wi-Fi/subnet."), false);
+        } else {
+            src.sendSuccess(() -> Component.literal(String.format("  Discovered \u00a7e%d\u00a7r local peer worlds:", worlds.size())), false);
+            for (var w : worlds) {
+                src.sendSuccess(() -> Component.literal(String.format(
+                        "  * \u00a7a%s\u00a7r hosted by \u00a7e%s\u00a7r at \u00a7f%s:%d\u00a7r [Direct LAN]",
+                        w.worldName(), w.hostPlayer(), w.address().getHostAddress(), w.port())), false);
+            }
+        }
         return 1;
     }
 }
