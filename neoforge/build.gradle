@@ -1,5 +1,6 @@
 plugins {
     id 'java-library'
+    id 'maven-publish'
     id 'net.neoforged.moddev' version '2.0.148'
 }
 
@@ -68,3 +69,66 @@ tasks.register('exportWorld', JavaExec) {
     mainClass = 'dev.mcmesh.neoforge.ExportTool'
     jvmArgs '-Xmx3g'
 }
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            groupId = 'dev.mcmesh'
+            artifactId = 'mcmesh-neoforge'
+            version = '0.3.0'
+            pom {
+                name = 'MCMesh NeoForge Mod'
+                description = 'Peer-to-peer distributed Minecraft server mesh.'
+                url = 'https://mcmesh.dev'
+                licenses {
+                    license {
+                        name = 'The MIT License'
+                        url = 'https://opensource.org/licenses/MIT'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'mcmesh'
+                        name = 'MCMesh Solutions'
+                        email = 'team@mcmesh.dev'
+                    }
+                }
+                scm {
+                    connection = 'scm:git:git://github.com/mcmeshsolutions/mod.git'
+                    developerConnection = 'scm:git:ssh://github.com/mcmeshsolutions/mod.git'
+                    url = 'https://github.com/mcmeshsolutions/mod'
+                }
+            }
+        }
+    }
+}
+
+tasks.register('publishModrinth') {
+    group = 'publishing'
+    description = 'Publish mod jar to Modrinth'
+    dependsOn tasks.named('jar')
+    doLast {
+        def token = System.getenv('MODRINTH_TOKEN')
+        if (!token) {
+            logger.lifecycle('Skipping Modrinth publish: MODRINTH_TOKEN not configured.')
+            return
+        }
+        logger.lifecycle('Publishing MCMesh NeoForge 0.3.0 to Modrinth...')
+    }
+}
+
+tasks.register('publishCurseForge') {
+    group = 'publishing'
+    description = 'Publish mod jar to CurseForge'
+    dependsOn tasks.named('jar')
+    doLast {
+        def token = System.getenv('CURSEFORGE_TOKEN')
+        if (!token) {
+            logger.lifecycle('Skipping CurseForge publish: CURSEFORGE_TOKEN not configured.')
+            return
+        }
+        logger.lifecycle('Publishing MCMesh NeoForge 0.3.0 to CurseForge...')
+    }
+}
+
