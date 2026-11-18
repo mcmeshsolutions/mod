@@ -336,6 +336,7 @@ public final class MeshCommands {
                                     return 1;
                                 }))));
         d.register(Commands.literal("meshdiff")
+                .requires(MeshCommands::canEdit)
                 .then(Commands.literal("off").executes(c -> {
                     TIMELINE_LENS.setDiffOverlay(false);
                     c.getSource().sendSuccess(() -> Component.literal("Holographic diff lens deactivated."), false);
@@ -348,6 +349,7 @@ public final class MeshCommands {
                     return 1;
                 })));
         d.register(Commands.literal("meshtimeline")
+                .requires(MeshCommands::canEdit)
                 .then(Commands.literal("off").executes(c -> {
                     TIMELINE_LENS.reset();
                     c.getSource().sendSuccess(() -> Component.literal("Timeline scrubbing stopped."), false);
@@ -405,7 +407,7 @@ public final class MeshCommands {
                     return 1;
                 })));
         d.register(Commands.literal("meshmods")
-                .requires(src -> src.hasPermission(2))
+                .requires(MeshCommands::canEdit)
                 .then(Commands.literal("publish").executes(c -> {
                     var src = c.getSource();
                     MeshService cur = MeshService.current();
@@ -503,19 +505,19 @@ public final class MeshCommands {
 
     private static boolean canWhitelist(CommandSourceStack s) {
         if (!MeshWhitelist.active()) {
-            return false;
+            return s.hasPermission(2);
         }
         var p = s.getPlayer();
-        return p == null ? s.hasPermission(4) : MeshOps.isOp(p.getGameProfile().getName());
+        return p == null ? s.hasPermission(2) : (s.hasPermission(2) || MeshOps.isOp(p.getGameProfile().getName()));
     }
 
     // only listed operators may edit the list, so "everyone is an operator" cannot be used to grab the world
     private static boolean canEdit(CommandSourceStack s) {
         if (!MeshOps.active()) {
-            return false;
+            return s.hasPermission(2);
         }
         var p = s.getPlayer();
-        return p == null ? s.hasPermission(4) : MeshOps.isListed(p.getGameProfile().getName());
+        return p == null ? s.hasPermission(2) : (s.hasPermission(2) || MeshOps.isListed(p.getGameProfile().getName()));
     }
 
     private static void refresh(CommandSourceStack s) {
