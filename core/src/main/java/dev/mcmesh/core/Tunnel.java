@@ -10,6 +10,7 @@ public final class Tunnel {
     public static final int MAX_PAYLOAD = 64 * 1024;
     public static final byte HELLO = 1, HELLO_OK = 2, ERR = 3, OPEN = 4, DATA = 5, CLOSE = 6, UDP = 7, UDP_CLOSE = 8, PING = 9, PONG = 10;
     public static final byte CUDP = 11;
+    public static final byte BCAST = 12;
 
     public record Frame(byte type, int id, byte[] data) {}
 

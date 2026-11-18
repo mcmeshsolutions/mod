@@ -24,16 +24,25 @@ public final class GatewayClient {
     public static volatile String pack = "default";
     public static volatile String packVersion = "0";
 
+    private final String packName;
+    private final String packVer;
+
     public GatewayClient(String baseUrl, String token) {
+        this(baseUrl, token, pack, packVersion);
+    }
+
+    public GatewayClient(String baseUrl, String token, String packName, String packVer) {
         this.base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.token = token;
+        this.packName = packName != null ? packName : pack;
+        this.packVer = packVer != null ? packVer : packVersion;
     }
 
     /** A second client, same gateway and token but its own HttpClient and connection pool. HTTP/1.1 does
      *  not multiplex, so a caller that must never wait behind another caller's bulk traffic on the same
      *  client - a heartbeat loop stuck behind a world sync's chunk fetches, say - needs its own. */
     public GatewayClient sibling() {
-        return new GatewayClient(base, token);
+        return new GatewayClient(base, token, packName, packVer);
     }
 
     private static final int RATE_LIMIT_RETRIES = 3;
@@ -49,7 +58,7 @@ public final class GatewayClient {
 
     private byte[] exec(String path, String method, HttpRequest.BodyPublisher body, String contentType) throws IOException, GatewayException {
         HttpRequest req = HttpRequest.newBuilder(URI.create(base + path)).method(method, body).header("authorization", "Bearer " + token)
-                .header("x-mesh-pack", pack).header("x-mesh-pack-version", packVersion).header("x-mesh-client", String.valueOf(PROTOCOL)).header("content-type", contentType).timeout(Duration.ofSeconds(20)).build();
+                .header("x-mesh-pack", packName).header("x-mesh-pack-version", packVer).header("x-mesh-client", String.valueOf(PROTOCOL)).header("content-type", contentType).timeout(Duration.ofSeconds(20)).build();
         HttpResponse<byte[]> r;
         int limited = 0;
         int dropped = 0;
@@ -167,6 +176,14 @@ public final class GatewayClient {
         post("/v1/worlds/" + world + "/crash-report", b);
     }
 
+    public String forkWorld(String worldId, String rev, String name) throws IOException, GatewayException {
+        JsonObject b = new JsonObject();
+        b.addProperty("rev", rev);
+        b.addProperty("name", name);
+        JsonObject res = post("/v1/worlds/" + worldId + "/fork", b);
+        return res.get("id").getAsString();
+    }
+
     private JsonObject post(String path, JsonObject body) throws IOException, GatewayException {
         byte[] r = exec(path, "POST", HttpRequest.BodyPublishers.ofString(body.toString()), "application/json");
         return JsonParser.parseString(new String(r)).getAsJsonObject();
@@ -194,6 +211,44 @@ public final class GatewayClient {
     /** Owner or gateway admin only. Empty clears it. */
     public void setWorldMotd(String world, String text) throws IOException, GatewayException {
         exec("/v1/worlds/" + world + "/aux/settings/motd", "PUT", HttpRequest.BodyPublishers.ofString(MotdFormat.translate(text)), "application/octet-stream");
+    }
+
+    public record RevisionInfo(String id, long seq, String kind, long at, String by, int chunks, int files) {}
+    public record RevisionsResult(String head, List<RevisionInfo> revisions) {}
+    public record RollbackResult(String revision, int restored, int removed) {}
+
+    public RevisionsResult revisions(String world, int limit) throws IOException, GatewayException {
+        byte[] r = exec("/v1/worlds/" + world + "/revisions?limit=" + limit, "GET", HttpRequest.BodyPublishers.noBody(), "application/json");
+        JsonObject obj = JsonParser.parseString(new String(r)).getAsJsonObject();
+        String head = obj.get("head").getAsString();
+        List<RevisionInfo> revs = new ArrayList<>();
+        if (obj.has("revisions")) {
+            for (JsonElement el : obj.getAsJsonArray("revisions")) {
+                JsonObject o = el.getAsJsonObject();
+                revs.add(new RevisionInfo(
+                        o.get("id").getAsString(),
+                        o.get("seq").getAsLong(),
+                        o.get("kind").getAsString(),
+                        o.get("at").getAsLong(),
+                        o.has("by") && !o.get("by").isJsonNull() ? o.get("by").getAsString() : null,
+                        o.has("chunks") ? o.get("chunks").getAsInt() : 0,
+                        o.has("files") ? o.get("files").getAsInt() : 0));
+            }
+        }
+        return new RevisionsResult(head, revs);
+    }
+
+    public RollbackResult rollbackRegion(String world, String revision, String dim, int minCx, int minCz, int maxCx, int maxCz) throws IOException, GatewayException {
+        JsonObject b = new JsonObject();
+        b.addProperty("revision", revision);
+        b.addProperty("dim", dim);
+        b.addProperty("min_cx", minCx);
+        b.addProperty("min_cz", minCz);
+        b.addProperty("max_cx", maxCx);
+        b.addProperty("max_cz", maxCz);
+        byte[] r = exec("/v1/worlds/" + world + "/rollback", "POST", HttpRequest.BodyPublishers.ofString(b.toString()), "application/json");
+        JsonObject res = JsonParser.parseString(new String(r)).getAsJsonObject();
+        return new RollbackResult(res.get("revision").getAsString(), res.get("restored").getAsInt(), res.get("removed").getAsInt());
     }
 
     public String authChallenge() throws IOException, GatewayException {

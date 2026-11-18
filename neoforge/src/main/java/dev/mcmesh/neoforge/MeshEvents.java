@@ -59,6 +59,42 @@ public final class MeshEvents {
     }
 
     @SubscribeEvent
+    public static void playerNameFormat(net.neoforged.neoforge.event.entity.player.PlayerEvent.NameFormat e) {
+        if (Scratchpad.isInScratchpad(e.getEntity().getUUID())) {
+            String timer = Scratchpad.getTimerText(e.getEntity().getUUID());
+            e.setDisplayname(e.getDisplayname().copy().append(net.minecraft.network.chat.Component.literal(" \u00a7b[" + timer + "]")));
+        }
+    }
+
+    @SubscribeEvent
+    public static void pregenSwarmTick(ServerTickEvent.Post e) {
+        if (e.getServer().getTickCount() % 10 == 0) {
+            double mspt = e.getServer().getAverageTickTimeNanos() / 1_000_000.0;
+            double tps = mspt <= 50.0 ? 20.0 : 1000.0 / mspt;
+            var next = MeshCommands.PREGEN_SWARM.pollNext(tps, 19.5);
+            if (next != null) {
+                var overworld = e.getServer().overworld();
+                if (overworld != null) {
+                    overworld.getChunkSource().getChunk(next.cx(), next.cz(), net.minecraft.world.level.chunk.status.ChunkStatus.EMPTY, true);
+                }
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public static void inventoryTrack(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent e) {
+        if (e.getEntity() instanceof net.minecraft.server.level.ServerPlayer p) {
+            var inv = p.getInventory();
+            for (int i = 0; i < inv.getContainerSize(); i++) {
+                var stack = inv.getItem(i);
+                if (!stack.isEmpty()) {
+                    MeshCommands.INVENTORY_LEDGER.recordDelta(p.getUUID(), i, stack.getItem().toString(), stack.getCount());
+                }
+            }
+        }
+    }
+
+    @SubscribeEvent
     public static void started(ServerStartedEvent e) {
         MeshService s = MeshBoot.held();
         if (s == null) {

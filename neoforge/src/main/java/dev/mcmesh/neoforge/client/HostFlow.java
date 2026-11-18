@@ -194,6 +194,7 @@ public final class HostFlow {
         MeshTap.joinWorld = w.id();
         guestOf = w.host();
         guestWorld = w.id();
+        dev.mcmesh.neoforge.HostStatus.setGuestWorld(w.id(), () -> ClientHooks.vote("propose") == 1);
         guestRelay = relay;
         if (!w.role().equals("CLIENT_ONLY")) {
             Standby.start(w, relay);

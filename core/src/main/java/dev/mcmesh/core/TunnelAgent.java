@@ -170,6 +170,17 @@ public final class TunnelAgent implements AutoCloseable {
         }
     }
 
+    /** Fans out payload data to all guest streams (except exceptId if non-zero) in one tunnel transmission. */
+    public void broadcast(byte[] data, int exceptId) {
+        if (!closed && data != null && data.length > 0) {
+            send(Tunnel.BCAST, exceptId, data, data.length);
+        }
+    }
+
+    public void broadcast(byte[] data) {
+        broadcast(data, 0);
+    }
+
     private void open(int id, int chan) {
         var cs = channels;
         if (chan > cs.size()) {

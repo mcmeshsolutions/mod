@@ -126,7 +126,7 @@ public final class ClientHooks {
     }
 
     /** Runs a vote action off the render thread and prints the answer in chat. */
-    private static int vote(String action) {
+    static int vote(String action) {
         Minecraft mc = Minecraft.getInstance();
         String world = HostHealthHud.joinedWorld(mc);
         if (world == null) {
@@ -211,6 +211,16 @@ public final class ClientHooks {
             if (dev.mcmesh.neoforge.SyncProgress.active()) {
                 int bw = 150;
                 dev.mcmesh.neoforge.SyncProgress.draw(g, f, w - bw / 2 - 6, 64, bw);
+            }
+            if (dev.mcmesh.neoforge.Scratchpad.getDraft("default") != null && dev.mcmesh.neoforge.Scratchpad.getDraft("default").hologramActive()) {
+                String hs = "Blueprint hologram: ON";
+                g.drawString(f, hs, w - f.width(hs) - 6, 76, 0xFF55FFFF, true);
+            }
+            if (dev.mcmesh.neoforge.MeshCommands.TIMELINE_LENS.isDiffOverlayActive()) {
+                String ts = dev.mcmesh.neoforge.MeshCommands.TIMELINE_LENS.getStatusLine();
+                if (ts != null) {
+                    g.drawString(f, ts, w - f.width(ts) - 6, 88, 0xFFFFAA00, true);
+                }
             }
         } catch (RuntimeException ex) {
             // a status line must never take the frame down with it

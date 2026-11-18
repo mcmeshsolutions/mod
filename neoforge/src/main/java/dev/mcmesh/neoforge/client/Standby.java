@@ -178,6 +178,10 @@ public final class Standby {
                 try {
                     var id = MeshAuth.cached();
                     Path root = mc.gameDirectory.toPath().resolve("saves").resolve(HostFlow.saveName(w.id())).toAbsolutePath().normalize();
+                    if (System.currentTimeMillis() - lastWarm > WARM_SYNC_MS) {
+                        lastWarm = System.currentTimeMillis();
+                        MeshBoot.warmSync(root, w.id());
+                    }
                     MeshService s = MeshService.join(root, w.id(), id.token(), id.name(), 1, Runtime.getRuntime().availableProcessors());
                     if (s != null) {
                         running = null;
@@ -217,6 +221,7 @@ public final class Standby {
         long end = System.currentTimeMillis() + w.takeoverInS() * 1000;
         String host = w.host();
         long lastSync = System.currentTimeMillis();
+        long lastWarmSync = 0;
         long lastBid = 0;
         try {
             while (running == Thread.currentThread()) {
@@ -244,6 +249,11 @@ public final class Standby {
                     if (left > 0) {
                         scr.heading(String.format("Joining and taking over hosting in %02d:%02d", left / 60, left % 60));
                         scr.line((host == null ? "The host" : host) + " keeps hosting until then. Stay on this screen.");
+                        if (now - lastWarmSync > WARM_SYNC_MS) {
+                            lastWarmSync = now;
+                            Path root = mc.gameDirectory.toPath().resolve("saves").resolve(HostFlow.saveName(w.id())).toAbsolutePath().normalize();
+                            MeshBoot.warmSync(root, w.id());
+                        }
                     } else {
                         scr.heading("Taking over hosting");
                         scr.line("Asking " + (host == null ? "the host" : host) + " to hand the world over.");

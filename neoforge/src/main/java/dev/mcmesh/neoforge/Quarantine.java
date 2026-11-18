@@ -63,4 +63,33 @@ public final class Quarantine {
         NbtIo.writeCompressed(tag, tmp);
         Files.move(tmp, tmp.resolveSibling(tmp.getFileName().toString().replaceAll("\\.tmp$", "")));
     }
+
+    public record DumpInfo(String filename, long timestamp, String what) {}
+
+    public static java.util.List<DumpInfo> listDumps(Path worldRoot) {
+        Path qDir = worldRoot.resolve("mesh").resolve("quarantine");
+        if (!Files.isDirectory(qDir)) {
+            return java.util.List.of();
+        }
+        try (var s = Files.list(qDir)) {
+            return s.filter(p -> p.getFileName().toString().endsWith(".nbt"))
+                    .map(p -> {
+                        String fn = p.getFileName().toString();
+                        long ts = 0;
+                        String what = fn;
+                        int dash = fn.indexOf('-');
+                        if (dash > 0) {
+                            try {
+                                ts = Long.parseLong(fn.substring(0, dash));
+                                what = fn.substring(dash + 1, fn.length() - 4).replace('_', ' ');
+                            } catch (NumberFormatException ignored) { }
+                        }
+                        return new DumpInfo(fn, ts, what);
+                    })
+                    .sorted((a, b) -> Long.compare(b.timestamp(), a.timestamp()))
+                    .toList();
+        } catch (IOException e) {
+            return java.util.List.of();
+        }
+    }
 }

@@ -50,13 +50,22 @@ public final class MeshApiImpl implements MeshApi {
 
     @Override
     public SessionMode mode() {
-        return MeshService.current() != null ? SessionMode.MESH_HOST : SessionMode.STANDALONE_LOCAL;
+        if (MeshService.current() != null) {
+            return SessionMode.MESH_HOST;
+        }
+        if (HostStatus.guestWorld() != null) {
+            return SessionMode.MESH_GUEST;
+        }
+        return SessionMode.STANDALONE_LOCAL;
     }
 
     @Override
     public String worldId() {
         MeshService s = MeshService.current();
-        return s == null ? null : s.worldId();
+        if (s != null) {
+            return s.worldId();
+        }
+        return HostStatus.guestWorld();
     }
 
     @Override
@@ -82,7 +91,7 @@ public final class MeshApiImpl implements MeshApi {
 
     @Override
     public boolean requestTakeover() {
-        return false;
+        return HostStatus.requestTakeover();
     }
 
     private Path root() {
