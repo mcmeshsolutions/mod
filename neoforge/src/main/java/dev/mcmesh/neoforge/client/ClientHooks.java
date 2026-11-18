@@ -38,6 +38,7 @@ public final class ClientHooks {
                 Minecraft.getInstance().setScreen(new OnboardingWizardScreen(t));
                 return;
             }
+            checkClipboardInvite(t, e);
             e.addListener(Button.builder(Component.literal("Mesh settings"), b -> Minecraft.getInstance().setScreen(ConfigScreen.open(t)))
                     .bounds(4, 4, 90, 20).build());
             e.addListener(Button.builder(Component.literal("Shared worlds"), b -> Minecraft.getInstance().setScreen(new SyncedWorldsScreen(t)))
@@ -293,5 +294,34 @@ public final class ClientHooks {
             }, Component.literal("Convert \"" + name + "\" to a shared world?"),
                     Component.literal("A copy is uploaded to the gateway, including your inventory. The original save is not changed.")));
         });
+    }
+
+    private static void checkClipboardInvite(net.minecraft.client.gui.screens.TitleScreen t, ScreenEvent.Init.Post e) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.keyboardHandler == null) return;
+        String clip = null;
+        try {
+            clip = mc.keyboardHandler.getClipboard();
+        } catch (Exception ignored) {}
+
+        var detected = dev.mcmesh.core.ClipboardInvite.check(clip);
+        if (detected != null) {
+            int bw = 260;
+            int bx = (t.width - bw) / 2;
+            int by = 6;
+            var joinBtn = Button.builder(Component.literal("\u00a7a[Join Invite]\u00a7r " + (detected.host() != null ? detected.host() : detected.code())), b -> {
+                dev.mcmesh.core.ClipboardInvite.markHandled(detected.code());
+                mc.setScreen(new SyncedWorldsScreen(t));
+            }).bounds(bx, by, bw - 26, 20).build();
+
+            var dismissBtn = Button.builder(Component.literal("\u00a77X\u00a7r"), b -> {
+                dev.mcmesh.core.ClipboardInvite.dismiss(detected.code());
+                joinBtn.visible = false;
+                b.visible = false;
+            }).bounds(bx + bw - 22, by, 22, 20).build();
+
+            e.addListener(joinBtn);
+            e.addListener(dismissBtn);
+        }
     }
 }

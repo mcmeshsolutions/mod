@@ -8,8 +8,8 @@ import java.util.regex.Pattern;
 /** The ways an invite reaches a player: the gateway's landing page link, a mcmesh://join link, or the bare code. */
 public final class InviteLink {
     private static final Pattern CODE = Pattern.compile("[0-9A-Fa-f]{8,64}");
-    private static final Pattern WEB = Pattern.compile("(?i)https?://[^\\s/]+/invite/([0-9A-Fa-f]{8,64})");
-    private static final Pattern SCHEME = Pattern.compile("(?i)mcmesh://join/([^\\s/]+)/([0-9A-Fa-f]{8,64})");
+    private static final Pattern WEB = Pattern.compile("(?i)https?://[^\\s/]+/(?:invite|join)/([0-9A-Za-z_-]{6,64})");
+    private static final Pattern SCHEME = Pattern.compile("(?i)mcmesh://join/([^\\s/]+)/([0-9A-Za-z_-]{6,64})");
 
     private InviteLink() { }
 
@@ -29,15 +29,27 @@ public final class InviteLink {
         String t = text.strip();
         Matcher m = SCHEME.matcher(t);
         if (m.find()) {
-            return new Parsed(hostOf(m.group(1)), m.group(2).toUpperCase());
+            return new Parsed(hostOf(m.group(1)), normalizeCode(m.group(2)));
         }
         m = WEB.matcher(t);
         if (m.find()) {
             String url = t.substring(m.start(), m.end());
-            return new Parsed(hostOf(url.substring(0, url.indexOf("/invite/"))), m.group(1).toUpperCase());
+            int idx = url.toLowerCase().indexOf("/invite/");
+            if (idx < 0) {
+                idx = url.toLowerCase().indexOf("/join/");
+            }
+            return new Parsed(hostOf(url.substring(0, idx)), normalizeCode(m.group(1)));
         }
         String bare = t.replaceAll("^[\"'`<(]+|[\"'`>).,;]+$", "");
         return CODE.matcher(bare).matches() ? new Parsed(null, bare.toUpperCase()) : null;
+    }
+
+    private static String normalizeCode(String code) {
+        if (code == null) return null;
+        if (CODE.matcher(code).matches()) {
+            return code.toUpperCase();
+        }
+        return code;
     }
 
     private static String hostOf(String hostOrUrl) {
