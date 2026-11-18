@@ -422,6 +422,23 @@ public final class MeshCommands {
                     c.getSource().sendSuccess(() -> Component.literal("Skin set to the one of " + n), false);
                     return 1;
                 })));
+        d.register(Commands.literal("meshcape")
+                .then(Commands.literal("clear").executes(c -> {
+                    var p = c.getSource().getPlayerOrException();
+                    SkinFix.CHOSEN_CAPE.remove(p.getGameProfile().getName().toLowerCase());
+                    SkinFix.apply(p, SkinFix.CHOSEN.getOrDefault(p.getGameProfile().getName().toLowerCase(), p.getGameProfile().getName()));
+                    c.getSource().sendSuccess(() -> Component.literal("Cape removed"), false);
+                    return 1;
+                }))
+                .then(Commands.literal("set")
+                        .then(Commands.argument("target", StringArgumentType.greedyString()).executes(c -> {
+                            var p = c.getSource().getPlayerOrException();
+                            String target = StringArgumentType.getString(c, "target").trim();
+                            SkinFix.CHOSEN_CAPE.put(p.getGameProfile().getName().toLowerCase(), target);
+                            SkinFix.apply(p, SkinFix.CHOSEN.getOrDefault(p.getGameProfile().getName().toLowerCase(), p.getGameProfile().getName()));
+                            c.getSource().sendSuccess(() -> Component.literal("Cape updated to: " + target), false);
+                            return 1;
+                        }))));
         d.register(Commands.literal("meshmods")
                 .requires(MeshCommands::canEdit)
                 .then(Commands.literal("publish").executes(c -> {

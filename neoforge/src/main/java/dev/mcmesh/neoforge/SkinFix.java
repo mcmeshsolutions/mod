@@ -23,8 +23,8 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import org.slf4j.Logger;
 
 /**
- * Handles skin resolution for hosted mesh servers. Resolves custom skins via gateway /v1/skins/:hash,
- * direct skin URLs or hashes, and falls back to Mojang session server lookups for offline-mode players.
+ * Handles skin and cape resolution for hosted mesh servers. Resolves custom skins and capes via gateway
+ * /v1/skins/:hash and /v1/capes/:hash, direct URLs or hashes, and falls back to Mojang session server lookups.
  */
 @EventBusSubscriber(modid = "mcmesh")
 public final class SkinFix {
@@ -34,6 +34,8 @@ public final class SkinFix {
     private static final Property NONE = new Property("textures", "");
     /** Maps a player to the custom identifier (Mojang name, skin hash, or URL) chosen with /meshskin. */
     static final Map<String, String> CHOSEN = new ConcurrentHashMap<>();
+    /** Maps a player to custom cape identifier (cape hash or URL) chosen with /meshcape. */
+    static final Map<String, String> CHOSEN_CAPE = new ConcurrentHashMap<>();
 
     private SkinFix() { }
 
@@ -64,7 +66,8 @@ public final class SkinFix {
     }
 
     private static Property resolve(String uuid, String name, String identifier) {
-        String key = (uuid + ":" + identifier).toLowerCase();
+        String capeChoice = CHOSEN_CAPE.get(name.toLowerCase());
+        String key = (uuid + ":" + identifier + ":" + (capeChoice == null ? "" : capeChoice)).toLowerCase();
         Property cached = CACHE.get(key);
         if (cached != null) {
             return cached;
@@ -75,39 +78,79 @@ public final class SkinFix {
             apiUrl = apiUrl.substring(0, apiUrl.length() - 1);
         }
 
-        // 1. Direct URL
+        String skinUrl = null;
         if (identifier.startsWith("http://") || identifier.startsWith("https://")) {
-            Property p = createSkinProperty(identifier, uuid, name);
-            CACHE.put(key, p);
-            return p;
-        }
-
-        // 2. Direct 64-char hex hash
-        if (identifier.length() == 64 && isHex(identifier) && apiUrl != null && !apiUrl.isBlank()) {
-            Property p = createSkinProperty(apiUrl + "/v1/skins/" + identifier, uuid, name);
-            CACHE.put(key, p);
-            return p;
-        }
-
-        // 3. Check Gateway for custom skin registered to this player's UUID
-        if (apiUrl != null && !apiUrl.isBlank()) {
+            skinUrl = identifier;
+        } else if (identifier.length() == 64 && isHex(identifier) && apiUrl != null && !apiUrl.isBlank()) {
+            skinUrl = apiUrl + "/v1/skins/" + identifier;
+        } else if (apiUrl != null && !apiUrl.isBlank()) {
             try {
                 JsonObject skinRes = get(apiUrl + "/v1/users/" + uuid + "/skin");
                 if (skinRes != null && skinRes.has("skin_url")) {
-                    String skinUrl = apiUrl + skinRes.get("skin_url").getAsString();
-                    Property p = createSkinProperty(skinUrl, uuid, name);
-                    CACHE.put(key, p);
-                    return p;
+                    skinUrl = apiUrl + skinRes.get("skin_url").getAsString();
                 }
             } catch (Exception ex) {
                 LOG.debug("gateway skin check for {} failed: {}", uuid, ex.toString());
             }
         }
 
-        // 4. Fallback to Mojang session server by username
-        Property p = lookupMojang(identifier);
-        CACHE.put(key, p);
-        return p;
+        String capeUrl = null;
+        if (capeChoice != null) {
+            if (capeChoice.startsWith("http://") || capeChoice.startsWith("https://")) {
+                capeUrl = capeChoice;
+            } else if (capeChoice.length() == 64 && isHex(capeChoice) && apiUrl != null && !apiUrl.isBlank()) {
+                capeUrl = apiUrl + "/v1/capes/" + capeChoice;
+            }
+        }
+        if (capeUrl == null && apiUrl != null && !apiUrl.isBlank()) {
+            try {
+                JsonObject capeRes = get(apiUrl + "/v1/users/" + uuid + "/cape");
+                if (capeRes != null && capeRes.has("cape_url")) {
+                    capeUrl = apiUrl + capeRes.get("cape_url").getAsString();
+                }
+            } catch (Exception ex) {
+                LOG.debug("gateway cape check for {} failed: {}", uuid, ex.toString());
+            }
+        }
+
+        if (skinUrl != null) {
+            Property p = createSkinAndCapeProperty(skinUrl, capeUrl, uuid, name);
+            CACHE.put(key, p);
+            return p;
+        }
+
+        // Fallback to Mojang profile lookup
+        Property mojangProp = lookupMojang(identifier);
+        if (mojangProp != NONE && capeUrl != null) {
+            try {
+                byte[] decoded = Base64.getDecoder().decode(mojangProp.value());
+                JsonObject root = JsonParser.parseString(new String(decoded, StandardCharsets.UTF_8)).getAsJsonObject();
+                JsonObject textures = root.has("textures") ? root.getAsJsonObject("textures") : new JsonObject();
+                JsonObject cape = new JsonObject();
+                cape.addProperty("url", capeUrl);
+                textures.add("CAPE", cape);
+                root.add("textures", textures);
+                String reEncoded = Base64.getEncoder().encodeToString(root.toString().getBytes(StandardCharsets.UTF_8));
+                Property combined = new Property("textures", reEncoded);
+                CACHE.put(key, combined);
+                return combined;
+            } catch (Exception ex) {
+                LOG.debug("failed to inject cape into mojang textures: {}", ex.toString());
+            }
+        }
+
+        if (mojangProp != NONE) {
+            CACHE.put(key, mojangProp);
+            return mojangProp;
+        }
+
+        if (capeUrl != null) {
+            Property p = createSkinAndCapeProperty(null, capeUrl, uuid, name);
+            CACHE.put(key, p);
+            return p;
+        }
+
+        return NONE;
     }
 
     private static boolean isHex(String s) {
@@ -120,15 +163,22 @@ public final class SkinFix {
         return true;
     }
 
-    private static Property createSkinProperty(String skinUrl, String uuid, String name) {
+    private static Property createSkinAndCapeProperty(String skinUrl, String capeUrl, String uuid, String name) {
         JsonObject root = new JsonObject();
         root.addProperty("timestamp", System.currentTimeMillis());
         root.addProperty("profileId", uuid.replace("-", ""));
         root.addProperty("profileName", name);
         JsonObject textures = new JsonObject();
-        JsonObject skin = new JsonObject();
-        skin.addProperty("url", skinUrl);
-        textures.add("SKIN", skin);
+        if (skinUrl != null && !skinUrl.isBlank()) {
+            JsonObject skin = new JsonObject();
+            skin.addProperty("url", skinUrl);
+            textures.add("SKIN", skin);
+        }
+        if (capeUrl != null && !capeUrl.isBlank()) {
+            JsonObject cape = new JsonObject();
+            cape.addProperty("url", capeUrl);
+            textures.add("CAPE", cape);
+        }
         root.add("textures", textures);
         String json = root.toString();
         String b64 = Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
