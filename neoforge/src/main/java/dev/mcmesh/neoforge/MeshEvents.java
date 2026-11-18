@@ -81,6 +81,26 @@ public final class MeshEvents {
     }
 
     @SubscribeEvent
+    public static void onBlockPlaced(net.neoforged.neoforge.event.level.BlockEvent.EntityPlaceEvent e) {
+        if (e.getEntity() instanceof net.minecraft.server.level.ServerPlayer p) {
+            if (Scratchpad.isInScratchpad(p.getUUID())) {
+                String blockId = String.valueOf(e.getPlacedBlock().getBlock());
+                Scratchpad.recordBlockPlaced(p.getUUID(), blockId);
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public static void onBlockBroken(net.neoforged.neoforge.event.level.BlockEvent.BreakEvent e) {
+        if (e.getPlayer() instanceof net.minecraft.server.level.ServerPlayer p) {
+            if (Scratchpad.isInScratchpad(p.getUUID())) {
+                String blockId = String.valueOf(e.getState().getBlock());
+                Scratchpad.recordBlockBroken(p.getUUID(), blockId);
+            }
+        }
+    }
+
+    @SubscribeEvent
     public static void pregenSwarmTick(ServerTickEvent.Post e) {
         if (e.getServer().getTickCount() % 10 == 0) {
             double mspt = e.getServer().getAverageTickTimeNanos() / 1_000_000.0;

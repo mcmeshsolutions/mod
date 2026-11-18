@@ -83,8 +83,15 @@ public final class MeshCommands {
         d.register(Commands.literal("meshstatus").executes(c -> {
             MeshService cur = MeshService.current();
             String mem = MemWatch.availableMb() < 0 ? "" : ", " + MemWatch.availableMb() + " MB system memory free";
-            c.getSource().sendSuccess(() -> Component.literal(cur == null ? "Not hosting a mesh world on this machine" + mem
-                    : "Hosting: " + cur.status() + mem), false);
+            if (cur == null) {
+                boolean sp = !c.getSource().getServer().isDedicatedServer();
+                String offlineInfo = sp
+                        ? "Offline Singleplayer Sandbox Mode: active (creative scratchpad, holographic BOM, and Create schematic exports ready without gateway)"
+                        : "Not hosting a mesh world on this machine";
+                c.getSource().sendSuccess(() -> Component.literal(offlineInfo + mem), false);
+            } else {
+                c.getSource().sendSuccess(() -> Component.literal("Hosting: " + cur.status() + mem), false);
+            }
             return 1;
         }));
         d.register(Commands.literal("meshrevisions")
@@ -165,6 +172,14 @@ public final class MeshCommands {
                     c.getSource().sendSuccess(() -> Component.literal("Returned to survival. Holographic blueprint is active at original position! Run '/meshbom " + draft.name() + "' for material list."), false);
                     return 1;
                 }))
+                .then(Commands.literal("save")
+                        .then(Commands.argument("name", StringArgumentType.word()).executes(c -> {
+                            var p = c.getSource().getPlayerOrException();
+                            String n = StringArgumentType.getString(c, "name");
+                            Scratchpad.saveDraft(n, new java.util.HashMap<>(), p.level().dimension().location().toString(), p.getX(), p.getY(), p.getZ());
+                            c.getSource().sendSuccess(() -> Component.literal("Saved draft '" + n + "'. Holographic blueprint and BOM are ready."), false);
+                            return 1;
+                        })))
                 .then(Commands.literal("list").executes(c -> {
                     var list = Scratchpad.listDrafts();
                     if (list.isEmpty()) {
