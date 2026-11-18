@@ -419,6 +419,8 @@ public final class MeshCommands {
                     c.getSource().sendSuccess(() -> Component.literal("Mesh Wizard is accessible from the title screen via 'Setup wizard' button or run '/meshwizard reset' to trigger on next restart."), false);
                     return 1;
                 }));
+        d.register(Commands.literal("meshdoctor")
+                .executes(c -> runDoctor(c.getSource())));
         d.register(Commands.literal("meshpregen")
                 .requires(MeshCommands::canEdit)
                 .then(Commands.literal("status").executes(c -> {
@@ -817,6 +819,36 @@ public final class MeshCommands {
                     b.label(), b.minX(), b.minY(), b.minZ(), b.maxX(), b.maxY(), b.maxZ(), b.builder(), b.blockCount()
             )), false);
         }
+        return 1;
+    }
+
+    private static int runDoctor(CommandSourceStack src) {
+        src.sendSuccess(() -> Component.literal("\u00a76[MCMesh Doctor]\u00a7r Running self-host & connectivity diagnostics..."), false);
+        Thread.startVirtualThread(() -> {
+            String api = (MeshConfig.API_URL != null && MeshConfig.API_URL.get() != null) ? MeshConfig.API_URL.get() : "http://localhost:8080";
+            String pack = (MeshConfig.PACK_ID != null && MeshConfig.PACK_ID.get() != null) ? MeshConfig.PACK_ID.get() : "default";
+            String ver = (MeshConfig.PACK_VERSION != null && MeshConfig.PACK_VERSION.get() != null) ? MeshConfig.PACK_VERSION.get() : "1";
+            var items = dev.mcmesh.core.Doctor.diagnose(api, pack, ver, P2P_DIRECT);
+
+            boolean hasFail = false;
+            for (var item : items) {
+                String tag = switch (item.status()) {
+                    case PASS -> "\u00a7a[PASS]\u00a7r";
+                    case WARN -> "\u00a7e[WARN]\u00a7r";
+                    case FAIL -> "\u00a7c[FAIL]\u00a7r";
+                };
+                if (item.status() == dev.mcmesh.core.Doctor.DiagnosticItem.Status.FAIL) hasFail = true;
+                src.sendSuccess(() -> Component.literal("  " + tag + " " + item.name() + ": " + item.message()), false);
+                if (item.fix() != null) {
+                    src.sendSuccess(() -> Component.literal("       \u00a7bFix:\u00a7r " + item.fix()), false);
+                }
+            }
+            if (!hasFail) {
+                src.sendSuccess(() -> Component.literal("\u00a76[MCMesh Doctor]\u00a7r Verdict: \u00a7aHEALTHY\u00a7r"), false);
+            } else {
+                src.sendSuccess(() -> Component.literal("\u00a76[MCMesh Doctor]\u00a7r Verdict: \u00a7cISSUES DETECTED\u00a7r (see suggestions above)"), false);
+            }
+        });
         return 1;
     }
 }
